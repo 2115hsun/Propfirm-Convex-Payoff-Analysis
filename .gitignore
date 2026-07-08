@@ -1,0 +1,5 @@
+﻿Rules/data/
+*.csv.zst
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
