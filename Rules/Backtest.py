@@ -106,7 +106,10 @@ def backtest_entries(strategy, bars, atr_p=14, k_stop_atr=1.0, max_hold=480,
     a = atr(high, low, close, atr_p)
     dates = bars.index.normalize().to_numpy()
 
-    idx, direction = strategy.entries(high, low, close)
+    if getattr(strategy, "wants_bars", False):
+        idx, direction = strategy.entries(bars)          # time/volume-aware (ORB, Keltner)
+    else:
+        idx, direction = strategy.entries(high, low, close)  # price-only (BOS, EMA)
 
     day_ids, mfe_before, stopped, timeout_R = [], [], [], []
     day_counter, last_day, busy_until = -1, None, -1

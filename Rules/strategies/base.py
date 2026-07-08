@@ -15,6 +15,7 @@ import numpy as np
 
 class EntryStrategy:
     name: str = "base"
+    wants_bars: bool = False  # True = wants OHLCV bars; False = price-only (close)
 
     def entries(self, high, low, close):
         """Given 1-D price arrays, return (entry_idx, direction) where
