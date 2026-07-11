@@ -55,16 +55,42 @@ def sweep_risk(strategy, firm, risk_pcts, n_paths=4_000, max_trades=400, seed=0)
         fr.append(res.fail_rate * 100)
     return np.array(pr), np.array(sp), np.array(fr)
 
+def _eval_pass (strategy, firm, risk_pct, n_paths, max_trades, seeds):
+    ps = [simulate(strategy, firm, risk_per_trade=firm.start_balance * risk_pct / 100.0,
+                   n_paths=n_paths, max_trades=max_trades, seed=s).pass_rate * 100
+          for s in seeds]
+    ps = np.array(ps)
+    return ps.mean(), ps.std(ddof=1) / np.sqrt(len(ps))  # mean, sem
 
-def find_optimal_risk(strategy, firm, risk_pcts=None, n_paths=4_000, max_trades=400, seed=0):
+def find_optimal_risk(strategy, firm, risk_pcts=None, n_paths=4_000, max_trades=400,
+                      seed=0, seeds=None, tie_sd=1.0):
     if risk_pcts is None:
         risk_pcts = np.round(np.arange(0.10, 4.01, 0.10), 2)
-    pr, sp, fr = sweep_risk(strategy, firm, risk_pcts, n_paths, max_trades, seed)
-    best_pass = pr.max()
-    tied = np.flatnonzero(pr >= best_pass - 1e-9)
+    seeds = range(seed, seed + 5) if seeds is None else seeds
+
+    # average each metric over the seed panel; track pass-rate SE across seeds
+    prs, sps, frs = [], [], []
+    for s in seeds:
+        pr_s, sp_s, fr_s = sweep_risk(strategy, firm, risk_pcts, n_paths, max_trades, s)
+        prs.append(pr_s); sps.append(sp_s); frs.append(fr_s)
+    prs = np.array(prs)                      # shape (n_seeds, n_risks)
+    pr = prs.mean(axis=0)                     # stable pass-rate estimate
+    pr_se = prs.std(axis=0, ddof=1) / np.sqrt(len(seeds))
+    sp = np.nanmean(np.array(sps), axis=0)   # speed averaged over seeds
+    fr = np.array(frs).mean(axis=0)
+
+    # tie = within tie_sd standard errors of the best (NOT exact equality)
+    best = int(pr.argmax())
+    cutoff = pr[best] - tie_sd * pr_se[best]
+    tied = np.flatnonzero(pr >= cutoff)
+
+    # your original preference: among tied, take the fastest
     speeds = np.where(np.isnan(sp[tied]), np.inf, sp[tied])
     b = tied[int(np.argmin(speeds))]
-    return {"risk_pcts": risk_pcts, "pass_pct": pr, "speed": sp, "fail_pct": fr,
+
+    return {"risk_pcts": risk_pcts, "pass_pct": pr, "pass_se": pr_se,
+            "speed": sp, "fail_pct": fr, "tied_idx": tied,
+            "tied_risk_pcts": risk_pcts[tied].tolist(),
             "opt_risk_pct": float(risk_pcts[b]),
             "opt_risk_dollars": float(firm.start_balance * risk_pcts[b] / 100.0),
             "opt_pass_pct": float(pr[b]), "opt_speed": float(sp[b])}
@@ -181,6 +207,90 @@ def optimal_risk_by_firm(strategy, firm_getter, firm_keys, risk_pcts=None,
         fig.savefig(savepath, dpi=130, bbox_inches="tight")
     return results, fig
 
+"""
+days_to_pass_by_firm — per-firm distribution of DAYS TO PASS.
+
+Drop this into your analysis module (next to optimal_risk_by_firm). It reuses
+find_optimal_risk only to CHOOSE the risk per firm, then re-simulates at that
+risk with more paths and reports the days-to-pass distribution among passers.
+
+Left panel : box-and-whisker of days-to-pass (box = IQR, whiskers = p10-p90,
+             line = median), one row per firm.
+Right panel: pass rate, kept only as context (a fast median means little if
+             only a third of accounts pass).
+
+Requires in scope: simulate (from Engine), find_optimal_risk, numpy as np,
+matplotlib.pyplot as plt.
+"""
+
+
+def days_to_pass_by_firm(strategy, firm_getter, firm_keys, risk_pcts=None,
+                         n_paths=3_000, max_trades=300, seed=0,
+                         dist_paths=20_000, min_passers=5, savepath=None):
+    # 1) discover the risk per firm exactly as before (cheap pass)
+    results = {k: find_optimal_risk(strategy, firm_getter(k), risk_pcts,
+                                    n_paths, max_trades, seed) for k in firm_keys}
+    firms = [firm_getter(k) for k in firm_keys]
+    names = [f.name for f in firms]
+
+    # 2) re-simulate at the chosen risk with more paths to get a clean distribution
+    boxstats, medians, passrates, ns = [], [], [], []
+    for k, f in zip(firm_keys, firms):
+        rpct = results[k]["opt_risk_pct"]
+        risk_dollars = rpct / 100.0 * f.start_balance      # Engine wants a $ amount
+        sim = simulate(strategy, f, risk_per_trade=risk_dollars,
+                       n_paths=dist_paths, max_trades=max_trades, seed=seed)
+
+        d = sim.days_to_pass[sim.outcome == 1].astype(float)   # passers only
+        passrates.append(100.0 * float(np.mean(sim.outcome == 1)))
+        ns.append(int(d.size))
+
+        if d.size >= min_passers:
+            p10, q1, med, q3, p90 = np.percentile(d, [10, 25, 50, 75, 90])
+        elif d.size >= 1:
+            med = float(np.median(d)); q1 = q3 = med
+            p10, p90 = float(d.min()), float(d.max())
+        else:
+            med = q1 = q3 = p10 = p90 = np.nan
+        medians.append(med)
+        boxstats.append(dict(med=med, q1=q1, q3=q3, whislo=p10, whishi=p90, fliers=[]))
+
+    # 3) plot
+    y = np.arange(len(names))[::-1]
+    fig, ax = plt.subplots(1, 2, figsize=(14, 0.7 * len(names) + 2))
+
+    valid = [i for i, s in enumerate(boxstats) if np.isfinite(s["med"])]
+    if valid:
+        ax[0].bxp([boxstats[i] for i in valid], positions=[y[i] for i in valid],
+                  vert=False, showfliers=False, widths=0.55, patch_artist=True,
+                  boxprops=dict(facecolor="#2e86de", alpha=0.65),
+                  medianprops=dict(color="black", linewidth=2))
+    for i in range(len(names)):
+        if np.isfinite(medians[i]):
+            ax[0].text(boxstats[i]["whishi"] + 0.4, y[i],
+                       f"med {medians[i]:.0f}d  (n={ns[i]:,})",
+                       va="center", fontsize=8, fontweight="bold")
+        else:
+            ax[0].text(0.2, y[i], "no passes", va="center",
+                       fontsize=8, color="crimson")
+    ax[0].set_yticks(y); ax[0].set_yticklabels(names)
+    ax[0].set_xlim(left=0)
+    ax[0].set_xlabel("Days to pass  (box = IQR, whiskers = p10–p90, line = median)")
+    ax[0].set_title(f"Days-to-pass distribution by firm\n[{strategy.name}]")
+
+    ax[1].barh(y, passrates, color="#e67e22")
+    for yi, v in zip(y, passrates):
+        ax[1].text(v + 0.5, yi, f"{v:.1f}%", va="center", fontsize=9)
+    ax[1].set_yticks(y); ax[1].set_yticklabels([]); ax[1].set_xlim(0, 100)
+    ax[1].set_xlabel("Pass rate (%)"); ax[1].set_title("Pass rate (context)")
+
+    fig.suptitle("Days-to-pass by firm (at MC-discovered risk)", fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    if savepath:
+        fig.savefig(savepath, dpi=130, bbox_inches="tight")
+
+    return results, fig, {"names": names, "medians": medians,
+                          "passrates": passrates, "n_passers": ns}
 
 # ---------------------------------------------------------------------------
 # Demos kept from before
