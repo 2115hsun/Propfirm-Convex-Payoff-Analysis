@@ -46,6 +46,8 @@ def window_pass_grids(strategy_factory, bars, firm, risk_pcts, rr_grid,
         g = optimal_geometry(firm, E, risk_pcts=risk_pcts, rr_grid=rr_grid,
                              n_paths=n_paths, max_trades=max_trades, seed=seed)
         grids.append(g["pass_grid"]); labels.append(label); counts.append(len(E.day_ids))
+    if not grids:   # no window had >= min_trades -- keep the (0, n_risk, n_rr) shape callers expect
+        return np.empty((0, len(risk_pcts), len(rr_grid))), labels, counts
     return np.array(grids), labels, counts
 
 
