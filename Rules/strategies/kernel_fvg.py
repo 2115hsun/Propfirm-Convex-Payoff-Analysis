@@ -79,7 +79,7 @@ class KernelMTFFVG:
     wants_bars = True
 
     def __init__(self, h=8.0, r=8.0, x_0=25, er_len=10, er_min=0.3,
-                 fvg_tfs=(2, 3, 4, 5), min_tf_agree=2, fvg_lookback=15, agree=3,
+                 fvg_tfs=(2, 3, 4, 5), min_tf_agree=0, fvg_lookback=15, agree=1,
                  allow_long=True, allow_short=True):
         self.h = float(h); self.r = float(r); self.x_0 = int(x_0)
         self.er_len = int(er_len); self.er_min = float(er_min)
