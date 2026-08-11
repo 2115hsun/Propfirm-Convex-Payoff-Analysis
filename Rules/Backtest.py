@@ -169,8 +169,8 @@ def backtest_entries(strategy, bars, atr_p=14, k_stop_atr=1.0, max_hold=480,
             was_stopped = False
             to_R = float((close[j1 - 1] - entry) / stop_dist * d)
             exit_bar = j1 - 1
-            day = dates[e]
-            
+
+        day = dates[e]
         if day != last_day:
             day_counter += 1; last_day = day
         day_ids.append(day_counter); mfe_before.append(mfe)

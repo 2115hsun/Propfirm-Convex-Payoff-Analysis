@@ -40,7 +40,7 @@ def _rqk(close, h, r, x_0):
 
 
 class KernelPullback:
-    name = "kernel_pullback"
+    name = "kernel_pullback_1"
     wants_bars = True
 
     def __init__(self, h=8.0, r=8.0, x_0=25, slope_len=1, slope_min=0.0,
@@ -55,16 +55,21 @@ class KernelPullback:
         self.allow_short = bool(allow_short)
         
         # Will hold the exact execution prices of the limit orders
-        self.fill_prices = np.array([]) 
 
     def entries(self, bars):
         high = bars["high"].to_numpy(float)
         low = bars["low"].to_numpy(float)
         close = bars["close"].to_numpy(float)
+        open_ = bars["open"].to_numpy(float)
         n = close.size
 
         # slow kernel (fair value)
-        k = _rqk(close, self.h, self.r, self.x_0)             
+        k = np.full(n, np.nan)
+        dates = bars.index.normalize().to_numpy()
+        _, starts = np.unique(dates, return_index=True)
+        bounds = list(np.sort(starts)) + [n]
+        for s, e in zip(bounds[:-1], bounds[1:]):
+            k[s:e] = _rqk(close[s:e], self.h, self.r, self.x_0)  
 
         idx_list = []
         dir_list = []
@@ -92,7 +97,7 @@ class KernelPullback:
                 if trade_dir == 1 and low[i] <= limit_price and self.allow_long:
                     idx_list.append(i)
                     dir_list.append(1)
-                    fill_price = min(limit_price, close[i])  # Ensure we don't fill above the close
+                    fill_price = min(open_[i], limit_price)  # Ensure we don't fill above the close
                     prices_list.append(fill_price)
                     filled_this_trend = True
                     limit_price = np.nan 
@@ -101,7 +106,7 @@ class KernelPullback:
                 elif trade_dir == -1 and high[i] >= limit_price and self.allow_short:
                     idx_list.append(i)
                     dir_list.append(-1)
-                    fill_price = max(limit_price, close[i])  # Ensure we don't fill below the close
+                    fill_price = max(open_[i], limit_price)  # Ensure we don't fill below the close
                     prices_list.append(fill_price)
                     filled_this_trend = True
                     limit_price = np.nan 
@@ -121,7 +126,7 @@ class KernelPullback:
                     
                     if conviction:
                         # Set the limit price to the exact kernel value on the flip candle
-                        limit_price = k[i]
+                        limit_price = k[i-1]
                         # Order is valid for the next N bars
                         limit_expiry = i + self.pullback_bars
                         trade_dir = new_trend
@@ -131,10 +136,8 @@ class KernelPullback:
 
         # Expose exact limit prices to the instance so Backtest.py can access them
         # without changing the unpacked return signature.
-        self.fill_prices = np.array(prices_list)
 
-        return np.array(idx_list), np.array(dir_list)
-
+        return (np.array(idx_list), np.array(dir_list), np.array(prices_list))
 
 DEFAULTS = dict(
     h=8.0, r=8.0, x_0=25, slope_len=1, slope_min=0.0,
