@@ -89,6 +89,7 @@ class Entries:
     n_days: int = 0
     source: str = "?"
     strategy: str = "?"
+    sizes: "np.ndarray | None" = None   # per-trade size multiplier (None = all 1.0)
 
     def summary(self):
         tpd = len(self.day_ids) / max(self.n_days, 1)
@@ -106,14 +107,26 @@ def backtest_entries(strategy, bars, atr_p=14, k_stop_atr=1.0, max_hold=480,
     a = atr(high, low, close, atr_p)
     dates = bars.index.normalize().to_numpy()
 
-    if getattr(strategy, "wants_bars", False):
-        idx, direction = strategy.entries(bars)          # time/volume-aware (ORB, Keltner)
-    else:
-        idx, direction = strategy.entries(high, low, close)  # price-only (BOS, EMA)
+    res = strategy.entries(bars) if getattr(strategy, "wants_bars", False) \
+        else strategy.entries(high, low, close)
+    if len(res) == 3:
+        idx, direction, third = res
+        third = np.asarray(third, float)
 
-    day_ids, mfe_before, stopped, timeout_R = [], [], [], []
+    # For now, a 3rd return value is interpreted as
+    # the exact execution price for each entry.
+        fill_prices = third
+        sizes_in = np.ones(len(idx), float)
+
+    else:
+        idx, direction = res
+        fill_prices = np.full(len(idx), np.nan)
+        sizes_in = np.ones(len(idx), float)
+
+    day_ids, mfe_before, stopped, timeout_R, sizes = [], [], [], [], []
     day_counter, last_day, busy_until = -1, None, -1
-    for e, d in zip(idx, direction):
+    
+    for k, (e, d) in enumerate(zip(idx, direction)):
         if e <= atr_p or e >= n - 2:
             continue
         if one_position and e <= busy_until:
@@ -121,33 +134,53 @@ def backtest_entries(strategy, bars, atr_p=14, k_stop_atr=1.0, max_hold=480,
         stop_dist = k_stop_atr * a[e]
         if not np.isfinite(stop_dist) or stop_dist <= 0:
             continue
-        entry = close[e]
-        j0, j1 = e + 1, min(e + 1 + max_hold, n)
+            
+        # ROUTE ENTRY PRICE DYNAMICALLY: Use custom limit fill if available, else close
+        if np.isfinite(fill_prices[k]):
+            entry = fill_prices[k]
+        else:
+            entry = close[e]
+
+        j0, j1 = e, min(e + max_hold, n)
         h = high[j0:j1]; lo = low[j0:j1]
         if d == 1:
-            fav = (h - entry) / stop_dist; adv = (entry - lo) / stop_dist
+            fav = (h - entry) / stop_dist
+            adv = (entry - lo) / stop_dist
         else:
-            fav = (entry - lo) / stop_dist; adv = (h - entry) / stop_dist
+            fav = (entry - lo) / stop_dist
+            adv = (h - entry) / stop_dist
+
+# First bar where the stop is touched.
         stops = np.flatnonzero(adv >= 1.0)
+
         if stops.size:
             sb = int(stops[0])
-            mfe = float(fav[:sb].max()) if sb > 0 else 0.0   # conservative: exclude stop bar
-            was_stopped, to_R, exit_bar = True, np.nan, j0 + sb
+
+    # Conservative treatment:
+    # once the stop bar is reached, do not credit any
+    # favorable excursion from that same bar.
+            mfe = float(fav[:sb].max()) if sb > 0 else 0.0
+
+            was_stopped = True
+            to_R = np.nan
+            exit_bar = j0 + sb
         else:
             mfe = float(fav.max()) if fav.size else 0.0
             was_stopped = False
             to_R = float((close[j1 - 1] - entry) / stop_dist * d)
             exit_bar = j1 - 1
-        day = dates[e]
+            day = dates[e]
+            
         if day != last_day:
             day_counter += 1; last_day = day
         day_ids.append(day_counter); mfe_before.append(mfe)
         stopped.append(was_stopped); timeout_R.append(to_R)
+        sizes.append(sizes_in[k])
         busy_until = exit_bar
 
     return Entries(np.array(day_ids), np.array(mfe_before), np.array(stopped),
                    np.array(timeout_R), n_bars=n, n_days=int(day_counter + 1),
-                   strategy=getattr(strategy, "name", "?"))
+                   strategy=getattr(strategy, "name", "?"), sizes=np.array(sizes))
 
 
 def ledger_for_rr(entries: Entries, rr: float):
@@ -157,6 +190,8 @@ def ledger_for_rr(entries: Entries, rr: float):
     to = np.where(np.isfinite(entries.timeout_R), entries.timeout_R, -1.0)
     to = np.clip(to, -1.0, rr)
     R = np.where(win, rr, np.where(entries.stopped, -1.0, to))
+    if getattr(entries, "sizes", None) is not None:      # per-setup position sizing
+        R = R * entries.sizes
     return R, entries.day_ids
 
 
