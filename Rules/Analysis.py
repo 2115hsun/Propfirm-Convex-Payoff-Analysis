@@ -1,525 +1,297 @@
-"""Analysis.py — with sizing threaded through so heatmaps can use room-scaled sizing."""
+"""
+Analysis_points.py -- 3-D risk-geometry search for a FIXED-POINTS stop:
+(stop distance in points) x (risk % per trade) x (R:R) -> pass rate.
+
+Companion to Backtest_points.py (no ATR anywhere in either file). Where
+Analysis.py's risk_rr_heatmap() sweeps risk%/R:R against a SINGLE
+already-built Entries ledger (stop width was decided once, upstream, via
+k_stop_atr), this module adds stop width as its own axis: a different
+stop_points value changes which trades actually hit stop vs. target, so it
+needs its own backtest_entries() call per value -- not just a different R:R
+read off one ledger, the way risk%/R:R can be.
+
+Core outputs:
+  risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid)
+      -> full 3-D pass-rate/speed/WR grids + the single best cell
+  plot_risk_geometry_3d(firm, g)
+      -> 3-D bubble chart (stop pts x R:R x risk%, color+size = pass rate)
+  summary_table_3d(g, top_n=15)
+      -> flat DataFrame of the top cells, for a plain-text readout next to the chart
+"""
 from __future__ import annotations
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 -- registers the '3d' projection
 
 from Strategy import EmpiricalStrategy
 from Engine import simulate
-from Backtest import ledger_for_rr, measured_winrate
+from Backtest import backtest_entries, ledger_for_rr, measured_winrate
 
 _HEAT = LinearSegmentedColormap.from_list(
-    "rag", ["#8a1f1f", "#c0392b", "#e67e22", "#c9b02a", "#4a9a3a", "#1e7a2e"])
+    "rag", ["#8a1f1f", "#c0392b", "#e67e22", "#c9b02a", "#4a9a3a", "#1e7a2e"]
+
+)
+def risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid,
+                     max_hold=120, n_paths=2000, max_trades=300, seed=0,
+                     min_trades=25, max_days_to_pass=None):
+    """Full 3-D sweep: builds ONE Entries ledger per stop_points value, then
+    runs optimal_geometry-style Monte Carlo at every (stop, risk%, R:R) cell.
+
+    `speed_grid` (mean_trades_to_pass, from the Monte Carlo) says nothing
+    about WALL-CLOCK time on its own -- a combo needing only 70 trades to
+    pass still takes 9 months to actually reach if it only fires 0.4x/day.
+    `days_grid` is `SimResult.mean_days_to_pass` -- ALSO straight from the
+    same Monte Carlo, not a post-hoc estimate: EmpiricalStrategy is always
+    built with day_ids here, so simulate() block-bootstraps WHOLE historical
+    trading days (real day-to-day trade-count clustering, not a synthetic
+    constant rate) and tracks each simulated path's own day count to passing,
+    averaged over all n_paths. So both the "how many trades" and "how many
+    days" numbers are simulation outputs, averaged across many resampled
+    paths -- not one lucky historical run. Pass `max_days_to_pass` to make
+    that a real constraint on which cell counts as 'best': among cells
+    estimated to pass within that many trading days, the highest pass_pct
+    wins -- not the single highest pass_pct on the whole grid regardless of
+    how long it'd take to get there. If NO cell meets the ceiling,
+    `best['met_days_ceiling']` comes back False and the unconstrained
+    highest-pass_pct cell is used instead (so the function never silently
+    fails) -- check that flag.
+
+    CAVEAT this does NOT cover: the Monte Carlo only resamples from ONE
+    fixed historical R-ledger per cell -- it averages away PATH-level luck
+    (which random order the same trades come in), but if that ledger itself
+    is a small/lucky historical sample (e.g. a param combo with few total
+    trades), every resampled path inherits that same bias. Sweeping many
+    (stop, risk%, R:R) cells x many indicator-param combos and picking the
+    best-looking one is a multiple-comparisons search on top of that --
+    the winner is systematically more likely to be a combo whose historical
+    sample happened to look good, not necessarily the truest edge. Guard
+    against this with an in-sample/out-of-sample split (pick params on one
+    period, verify pass_pct/days_to_pass on a held-out period), not just a
+    bigger n_paths.
+
+    Returns a dict with pass_grid/speed_grid/days_grid (shape
+    len(stop_grid) x len(risk_pcts) x len(rr_grid)), wr_grid (shape
+    len(stop_grid) x len(rr_grid) -- win rate doesn't depend on risk%),
+    trades_grid/trades_per_day (per stop width), the flat 'best' cell, and
+    the per-stop Entries ledgers (entries_by_stop) so callers can reuse them
+    (e.g. for a 2-D risk_rr_heatmap at just the winning stop width) without
+    rebuilding."""
+    stop_grid = list(stop_grid); risk_pcts = list(risk_pcts); rr_grid = list(rr_grid)
+    ns, nr, nk = len(stop_grid), len(risk_pcts), len(rr_grid)
+    pass_grid = np.full((ns, nr, nk), np.nan)
+    speed_grid = np.full((ns, nr, nk), np.nan)
+    days_grid = np.full((ns, nr, nk), np.nan)   # SimResult.mean_days_to_pass -- see docstring caveat
+    wr_grid = np.full((ns, nk), np.nan)
+    trades_grid = np.zeros(ns, dtype=int)
+    trades_per_day = np.zeros(ns, dtype=float)   # measured (not simulated) -- display/diagnostic only
+    entries_by_stop = {}
+
+    for si, sp in enumerate(stop_grid):
+        E = backtest_entries(strategy, bars, stop_points=sp, max_hold=max_hold)
+        entries_by_stop[sp] = E
+        trades_grid[si] = len(E.day_ids)
+        trades_per_day[si] = len(E.day_ids) / max(E.n_days, 1)
+        if len(E.day_ids) < min_trades:
+            continue   # too few trades at this stop width to trust -- leave this slab NaN
+        for ki, rr in enumerate(rr_grid):
+            R, days = ledger_for_rr(E, rr)
+            strat = EmpiricalStrategy(R, name=f"{sp:g}pt {rr:g}R", day_ids=days)
+            wr_grid[si, ki] = measured_winrate(E, rr)
+            for ri, rp in enumerate(risk_pcts):
+                res = simulate(strat, firm, firm.start_balance * rp / 100.0,
+                               n_paths=n_paths, max_trades=max_trades, seed=seed)
+                pass_grid[si, ri, ki] = res.pass_rate * 100
+                speed_grid[si, ri, ki] = res.mean_trades_to_pass
+                days_grid[si, ri, ki] = res.mean_days_to_pass   # simulated, block-bootstrapped by real day -- not speed_grid/trades_per_day
+
+    if not np.isfinite(pass_grid).any():
+        raise ValueError("No (stop, risk%, R:R) cell cleared min_trades -- "
+                         "widen stop_grid or lower min_trades.")
+
+    met_ceiling = True
+    candidate_grid = pass_grid
+    if max_days_to_pass is not None:
+        within = np.isfinite(days_grid) & (days_grid <= max_days_to_pass)
+        if within.any():
+            candidate_grid = np.where(within, pass_grid, np.nan)
+        else:
+            met_ceiling = False   # nothing qualifies -- fall back to the unconstrained grid below
+
+    bi = np.unravel_index(np.nanargmax(candidate_grid), candidate_grid.shape)
+    best = dict(stop_points=float(stop_grid[bi[0]]), risk_pct=float(risk_pcts[bi[1]]),
+                rr=float(rr_grid[bi[2]]), pass_pct=float(pass_grid[bi]),
+                speed=float(speed_grid[bi]), wr=float(wr_grid[bi[0], bi[2]]),
+                trades=int(trades_grid[bi[0]]), trades_per_day=float(trades_per_day[bi[0]]),
+                days_to_pass=float(days_grid[bi]), met_days_ceiling=met_ceiling)
+    return dict(pass_grid=pass_grid, speed_grid=speed_grid, days_grid=days_grid, wr_grid=wr_grid,
+                trades_grid=trades_grid, trades_per_day=trades_per_day,
+                stop_grid=np.asarray(stop_grid, float),
+                risk_pcts=np.asarray(risk_pcts, float), rr_grid=np.asarray(rr_grid, float),
+                best=best, entries_by_stop=entries_by_stop)
 
 
-def measured_wr_curve(entries, rr_grid, savepath=None):
-    wr = [measured_winrate(entries, rr) for rr in rr_grid]
-    edge = []
-    for rr in rr_grid:
-        R, _ = ledger_for_rr(entries, rr); edge.append(float(R.mean()))
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(rr_grid, [w*100 for w in wr], "-o", color="#2e86de")
-    ax.set_xlabel("R:R"); ax.set_ylabel("Measured win rate (%)"); ax.grid(alpha=.3)
-    return fig, dict(zip(rr_grid, wr)), dict(zip(rr_grid, edge))
+def oos_check(firm, strategy, bars_oos, stop_points, rr, risk_pct,
+             max_hold=120, n_paths=2000, max_trades=300, seed=0, min_trades=10):
+    """Evaluate ONE already-chosen (stop_points, rr, risk_pct) cell for
+    `strategy` on held-out data -- no new argmax, no re-optimization, just a
+    direct measurement of how the exact combo already picked on in-sample
+    data performs on data it never saw.
+
+    This is the check risk_geometry_3d()'s Monte Carlo averaging alone can't
+    give you (see its docstring caveat): averaging over many resampled paths
+    protects against PATH-level luck in one fixed historical ledger, but says
+    nothing about whether that ledger's own history -- or the search over
+    many combos that picked it -- was itself a lucky sample. Compare this
+    result's pass_pct/days_to_pass against the in-sample `best` dict; a large
+    drop is the actual overfitting signal, not anything the in-sample number
+    alone can tell you."""
+    E = backtest_entries(strategy, bars_oos, stop_points=stop_points, max_hold=max_hold)
+    n_trades = len(E.day_ids)
+    if n_trades < min_trades:
+        return dict(trades=n_trades, pass_pct=float("nan"), days_to_pass=float("nan"),
+                    speed=float("nan"), wr=float("nan"),
+                    warning=f"only {n_trades} OOS trades (< min_trades={min_trades}) -- "
+                            f"too few to trust; widen OOS_FRACTION or treat as inconclusive")
+    R, days = ledger_for_rr(E, rr)
+    strat_oos = EmpiricalStrategy(R, name=f"OOS {stop_points:g}pt {rr:g}R", day_ids=days)
+    res = simulate(strat_oos, firm, firm.start_balance * risk_pct / 100.0,
+                   n_paths=n_paths, max_trades=max_trades, seed=seed)
+    return dict(trades=n_trades, pass_pct=res.pass_rate * 100, days_to_pass=res.mean_days_to_pass,
+                speed=res.mean_trades_to_pass, wr=measured_winrate(E, rr), warning=None)
 
 
-# --- sizing kwargs flow through every simulate() call below ---
-def sweep_risk(strategy, firm, risk_pcts, n_paths=4000, max_trades=400, seed=0,
-               sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    pr, sp, fr = [], [], []
-    for rp in risk_pcts:
-        res = simulate(strategy, firm, firm.start_balance*rp/100.0,
-                       n_paths=n_paths, max_trades=max_trades, seed=seed,
-                       sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac)
-        pr.append(res.pass_rate*100); sp.append(res.mean_trades_to_pass); fr.append(res.fail_rate*100)
-    return np.array(pr), np.array(sp), np.array(fr)
+def plot_risk_geometry_3d(firm, g, size_range=(30, 260), savepath=None):
+    """3-D bubble chart: x=stop distance (points), y=R:R (target/stop),
+    z=risk per trade (%); color AND bubble size both encode pass rate
+    (redundant encoding -- a 3-D scatter can't show a per-cell number the way
+    the 2-D heatmap does, so size stands in for it). The single best cell is
+    marked with a star."""
+    pass_grid, stop_grid, risk_pcts, rr_grid = (
+        g["pass_grid"], g["stop_grid"], g["risk_pcts"], g["rr_grid"])
+    best = g["best"]
 
+    SP, RP, RR = np.meshgrid(stop_grid, risk_pcts, rr_grid, indexing="ij")
+    sp_f, rp_f, rr_f, pg_f = SP.ravel(), RP.ravel(), RR.ravel(), pass_grid.ravel()
+    valid = np.isfinite(pg_f)
+    sp_f, rp_f, rr_f, pg_f = sp_f[valid], rp_f[valid], rr_f[valid], pg_f[valid]
 
-def _grid(firm, entries, risk_pcts, rr_grid, n_paths, max_trades, seed,
-          sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    wr = {rr: measured_winrate(entries, rr) for rr in rr_grid}
-    pass_grid = np.zeros((len(risk_pcts), len(rr_grid)))
-    speed_grid = np.full_like(pass_grid, np.nan)
-    for j, rr in enumerate(rr_grid):
-        R, days = ledger_for_rr(entries, rr)
-        strat = EmpiricalStrategy(R, name=f"{rr}R", day_ids=days)
-        pr, sp, _ = sweep_risk(strat, firm, risk_pcts, n_paths, max_trades, seed,
-                               sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac)
-        pass_grid[:, j] = pr; speed_grid[:, j] = sp
-    return pass_grid, speed_grid, wr
+    lo, hi = size_range
+    sizes = lo + (hi - lo) * (pg_f / 100.0)
 
+    fig = plt.figure(figsize=(11, 9))
+    ax = fig.add_subplot(111, projection="3d")
+    sc = ax.scatter(sp_f, rr_f, rp_f, c=pg_f, cmap=_HEAT, vmin=0, vmax=100,
+                    s=sizes, edgecolors="black", linewidths=0.4, alpha=0.85, depthshade=True)
+    ax.scatter([best["stop_points"]], [best["rr"]], [best["risk_pct"]],
+              marker="*", s=900, c="#00e5ff", edgecolors="black", linewidths=1.2,
+              label="best", zorder=10)
 
-def optimal_geometry(firm, entries, risk_pcts=None, rr_grid=None, n_paths=2000,
-                     max_trades=300, seed=0, sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    if risk_pcts is None: risk_pcts = np.round(np.arange(0.25, 3.51, 0.25), 2)
-    if rr_grid is None: rr_grid = [0.5, 1.0, 1.5, 2.0, 3.0]
-    pg, sg, wr = _grid(firm, entries, risk_pcts, rr_grid, n_paths, max_trades, seed,
-                       sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac)
-    bi, bj = np.unravel_index(np.nanargmax(pg), pg.shape)
-    return {"opt_rr": rr_grid[bj], "opt_risk_pct": float(risk_pcts[bi]),
-            "opt_pass_pct": float(pg[bi, bj]), "opt_speed": float(sg[bi, bj]),
-            "opt_wr": wr[rr_grid[bj]], "pass_grid": pg, "speed_grid": sg,
-            "risk_pcts": risk_pcts, "rr_grid": rr_grid}
-
-
-def risk_rr_heatmap(firm, entries, risk_pcts=None, rr_grid=None, n_paths=2000,
-                    max_trades=300, seed=0, savepath=None,
-                    sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    g = optimal_geometry(firm, entries, risk_pcts, rr_grid, n_paths, max_trades, seed,
-                         sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac)
-    pg, sg, rps, rrs = g["pass_grid"], g["speed_grid"], g["risk_pcts"], g["rr_grid"]
-    wr = {rr: measured_winrate(entries, rr) for rr in rrs}
-    fig, ax = plt.subplots(figsize=(1.6*len(rrs)+2, 0.5*len(rps)+2))
-    im = ax.imshow(pg, cmap=_HEAT, vmin=0, vmax=100, aspect="auto")
-    ax.set_xticks(range(len(rrs))); ax.set_xticklabels([f"{rr:g}R\n{wr[rr]:.0%} WR" for rr in rrs])
-    ax.set_yticks(range(len(rps)))
-    ax.set_yticklabels([f"{p:.2f}%\n(${firm.start_balance*p/100:.0f})" for p in rps], fontsize=8)
-    ax.set_xlabel("R:R  (win rate MEASURED from data)"); ax.set_ylabel("Risk per trade")
-    for i in range(len(rps)):
-        for j in range(len(rrs)):
-            v = pg[i, j]; s = "" if np.isnan(sg[i, j]) else f"\n{sg[i,j]:.0f} trd"
-            ax.text(j, i, f"{v:.0f}%{s}", ha="center", va="center", fontsize=7,
-                    color="white" if v < 55 else "black")
-    fig.colorbar(im, ax=ax, label="Pass rate (%)")
-    mode = "flat" if sizing == "flat" else f"room-scaled (comfort=${comfort_room})"
-    ax.set_title(f"Optimal risk geometry — {firm.name} [{mode}]\nbest: {g['opt_rr']:g}R @ "
-                 f"{g['opt_risk_pct']:.2f}% risk = {g['opt_pass_pct']:.0f}% pass "
-                 f"(~{g['opt_speed']:.0f} trades)", fontweight="bold", fontsize=10)
+    ax.set_xlabel("Stop distance (points)")
+    ax.set_ylabel("R:R (target/stop)")
+    ax.set_zlabel("Risk per trade (%)")
+    tgt_pts = best["stop_points"] * best["rr"]
+    days_note = (f" in ~{best['days_to_pass']:.0f} trading days" if "days_to_pass" in best
+                 and np.isfinite(best["days_to_pass"]) else "")
+    ceiling_note = "" if best.get("met_days_ceiling", True) else "  [!] NO cell met the days ceiling"
+    ax.set_title(f"Pass-rate surface -- {firm.name}\n"
+                 f"BEST: {best['stop_points']:g}pt stop / {tgt_pts:g}pt tgt "
+                 f"({best['rr']:g}R) @ {best['risk_pct']:.2f}% -> "
+                 f"{best['pass_pct']:.0f}% pass{days_note} (WR {best['wr']:.0%}){ceiling_note}",
+                 fontweight="bold")
+    ax.legend(loc="upper left")
+    cb = fig.colorbar(sc, ax=ax, shrink=0.6, pad=0.1)
+    cb.set_label("Pass rate (%)")
     fig.tight_layout()
-    if savepath: fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return fig, g
-
-
-def _eval_pass(strategy, firm, risk_pct, n_paths, max_trades, seeds):
-    ps = [simulate(strategy, firm, risk_per_trade=firm.start_balance*risk_pct/100.0,
-                   n_paths=n_paths, max_trades=max_trades, seed=s).pass_rate*100 for s in seeds]
-    ps = np.array(ps); return ps.mean(), ps.std(ddof=1)/np.sqrt(len(ps))
-
-
-def find_optimal_risk(strategy, firm, risk_pcts=None, n_paths=4000, max_trades=400,
-                      seed=0, seeds=None, tie_sd=1.0,
-                      sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    if risk_pcts is None: risk_pcts = np.round(np.arange(0.10, 4.01, 0.10), 2)
-    seeds = range(seed, seed+5) if seeds is None else seeds
-    prs, sps, frs = [], [], []
-    for s in seeds:
-        pr_s, sp_s, fr_s = sweep_risk(strategy, firm, risk_pcts, n_paths, max_trades, s,
-                                      sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac)
-        prs.append(pr_s); sps.append(sp_s); frs.append(fr_s)
-    prs = np.array(prs); pr = prs.mean(axis=0); pr_se = prs.std(axis=0, ddof=1)/np.sqrt(len(seeds))
-    sp = np.nanmean(np.array(sps), axis=0); fr = np.array(frs).mean(axis=0)
-    best = int(pr.argmax()); cutoff = pr[best]-tie_sd*pr_se[best]; tied = np.flatnonzero(pr >= cutoff)
-    speeds = np.where(np.isnan(sp[tied]), np.inf, sp[tied]); b = tied[int(np.argmin(speeds))]
-    return {"risk_pcts": risk_pcts, "pass_pct": pr, "pass_se": pr_se, "speed": sp, "fail_pct": fr,
-            "tied_idx": tied, "tied_risk_pcts": risk_pcts[tied].tolist(),
-            "opt_risk_pct": float(risk_pcts[b]), "opt_risk_dollars": float(firm.start_balance*risk_pcts[b]/100.0),
-            "opt_pass_pct": float(pr[b]), "opt_speed": float(sp[b])}
-
-
-def plot_risk_curve(strategy, firm, risk_pcts=None, n_paths=4000, max_trades=400, seed=0,
-                    savepath=None, sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    r = find_optimal_risk(strategy, firm, risk_pcts, n_paths, max_trades, seed,
-                          sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac)
-    rp, pr, sp = r["risk_pcts"], r["pass_pct"], r["speed"]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(rp, pr, "-o", color="#2e86de", ms=3, label="Pass rate")
-    ax.axvline(r["opt_risk_pct"], color="#e67e22", ls="--", label=f"optimum {r['opt_risk_pct']:.2f}%")
-    ax.scatter([r["opt_risk_pct"]],[r["opt_pass_pct"]], color="#e67e22", zorder=5)
-    ax.set_xlabel("Risk per trade (%)"); ax.set_ylabel("Pass rate (%)", color="#2e86de"); ax.set_ylim(0,100)
-    ax2 = ax.twinx(); ax2.plot(rp, sp, color="#16a085", alpha=.6); ax2.set_ylabel("Avg trades to pass", color="#16a085")
-    ax.set_title(f"Risk optimization — {firm.name} [{strategy.name}]", fontweight="bold")
-    ax.legend(loc="lower left", fontsize=8); fig.tight_layout()
-    if savepath: fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return fig, r
-
-
-def optimal_risk_by_firm(strategy, firm_getter, firm_keys, risk_pcts=None, n_paths=3000,
-                         max_trades=300, seed=0, savepath=None,
-                         sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    results = {k: find_optimal_risk(strategy, firm_getter(k), risk_pcts, n_paths, max_trades, seed,
-               sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac) for k in firm_keys}
-    names = [firm_getter(k).name for k in firm_keys]
-    opt_r = [results[k]["opt_risk_pct"] for k in firm_keys]; opt_p = [results[k]["opt_pass_pct"] for k in firm_keys]
-    y = np.arange(len(names))[::-1]
-    fig, ax = plt.subplots(1, 2, figsize=(14, 0.7*len(names)+2))
-    ax[0].barh(y, opt_p, color="#2e86de")
-    for yi, v, rr in zip(y, opt_p, opt_r):
-        ax[0].text(v+0.5, yi, f"{v:.1f}%  @ {rr:.2f}% risk", va="center", fontsize=9, fontweight="bold")
-    ax[0].set_yticks(y); ax[0].set_yticklabels(names); ax[0].set_xlim(0,100)
-    ax[0].set_xlabel("Best achievable pass rate (%)"); ax[0].set_title(f"Optimal risk & pass by firm\n[{strategy.name}]")
-    ax[1].barh(y, opt_r, color="#e67e22")
-    for yi, v in zip(y, opt_r): ax[1].text(v+0.02, yi, f"{v:.2f}%", va="center", fontsize=9)
-    ax[1].set_yticks(y); ax[1].set_yticklabels([]); ax[1].set_xlabel("Optimal risk per trade (%)")
-    fig.tight_layout()
-    if savepath: fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return results, fig
-
-
-def days_to_pass_by_firm(strategy, firm_getter, firm_keys, risk_pcts=None, n_paths=3000,
-                         max_trades=300, seed=0, dist_paths=20000, min_passers=5, savepath=None,
-                         sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    results = {k: find_optimal_risk(strategy, firm_getter(k), risk_pcts, n_paths, max_trades, seed,
-               sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac) for k in firm_keys}
-    firms = [firm_getter(k) for k in firm_keys]; names = [f.name for f in firms]
-    boxstats, medians, passrates, ns = [], [], [], []
-    for k, f in zip(firm_keys, firms):
-        rpct = results[k]["opt_risk_pct"]
-        sim = simulate(strategy, f, risk_per_trade=rpct/100.0*f.start_balance, n_paths=dist_paths,
-                       max_trades=max_trades, seed=seed, sizing=sizing,
-                       comfort_room=comfort_room, min_risk_frac=min_risk_frac)
-        d = sim.days_to_pass[sim.outcome == 1].astype(float)
-        passrates.append(100.0*float(np.mean(sim.outcome == 1))); ns.append(int(d.size))
-        if d.size >= min_passers:
-            p10,q1,med,q3,p90 = np.percentile(d,[10,25,50,75,90])
-        elif d.size >= 1:
-            med=float(np.median(d)); q1=q3=med; p10,p90=float(d.min()),float(d.max())
-        else: med=q1=q3=p10=p90=np.nan
-        medians.append(med); boxstats.append(dict(med=med,q1=q1,q3=q3,whislo=p10,whishi=p90,fliers=[]))
-    y = np.arange(len(names))[::-1]
-    fig, ax = plt.subplots(1, 2, figsize=(14, 0.7*len(names)+2))
-    valid = [i for i,s in enumerate(boxstats) if np.isfinite(s["med"])]
-    if valid:
-        ax[0].bxp([boxstats[i] for i in valid], positions=[y[i] for i in valid], vert=False,
-                  showfliers=False, widths=0.55, patch_artist=True,
-                  boxprops=dict(facecolor="#2e86de", alpha=0.65), medianprops=dict(color="black", linewidth=2))
-    for i in range(len(names)):
-        if np.isfinite(medians[i]):
-            ax[0].text(boxstats[i]["whishi"]+0.4, y[i], f"med {medians[i]:.0f}d  (n={ns[i]:,})", va="center", fontsize=8, fontweight="bold")
-    ax[0].set_yticks(y); ax[0].set_yticklabels(names); ax[0].set_xlim(left=0)
-    ax[0].set_xlabel("Days to pass (box=IQR, whiskers=p10-p90)"); ax[0].set_title(f"Days-to-pass by firm\n[{strategy.name}]")
-    ax[1].barh(y, passrates, color="#e67e22")
-    for yi, v in zip(y, passrates): ax[1].text(v+0.5, yi, f"{v:.1f}%", va="center", fontsize=9)
-    ax[1].set_yticks(y); ax[1].set_yticklabels([]); ax[1].set_xlim(0,100); ax[1].set_xlabel("Pass rate (%)")
-    fig.tight_layout()
-    if savepath: fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return results, fig, {"names": names, "medians": medians, "passrates": passrates, "n_passers": ns}
-
-
-def plot_equity_paths(firm, strategy, risk_per_trade, n_show=120, max_trades=300, seed=0,
-                      savepath=None, sizing="flat", comfort_room=None, min_risk_frac=0.10):
-    res = simulate(strategy, firm, risk_per_trade, n_paths=n_show, max_trades=max_trades,
-                   seed=seed, record_paths=True, sizing=sizing, comfort_room=comfort_room, min_risk_frac=min_risk_frac)
-    fig, ax = plt.subplots(figsize=(9, 5))
-    for p in range(n_show):
-        color = {1:"#2e8b57", -1:"#c0392b", 0:"#999999"}[res.outcome[p]]
-        ax.plot(res.equity_paths[p], color=color, alpha=.35, lw=.8)
-    ax.axhline(firm.target_equity, color="#1e7a2e", lw=1.5); ax.axhline(firm.initial_floor, color="#8a1f1f", lw=1.5)
-    ax.axhline(firm.start_balance, color="k", ls="--", lw=.8, alpha=.6)
-    ax.set_xlabel("Trade #"); ax.set_ylabel("Equity ($)")
-    ax.set_title(f"Equity paths — {firm.name} [{strategy.name}] risk ${risk_per_trade:.0f}")
     if savepath: fig.savefig(savepath, dpi=130, bbox_inches="tight")
     return fig
 
 
-"""
-Analysis.py — discover optimal risk geometry per firm (nothing predefined).
+def plot_top_cells(g, top_n=10, max_days_to_pass=None, savepath=None):
+    """Ranked horizontal bar chart of the top cells by pass rate -- a plain-
+    English complement to the 3-D bubble chart, which can't show exact
+    per-cell numbers (that's what summary_table_3d()'s text table is for;
+    this is the same data, but readable as a shape, not a grid of digits).
 
-Core outputs:
-  measured_wr_curve(entries)                 -> WR vs R:R, measured from data
-  find_optimal_risk(strategy, firm)          -> pass-maximizing risk % for a firm
-  plot_risk_curve(strategy, firm)            -> pass rate & speed vs risk
-  risk_rr_heatmap(firm, entries)             -> Risk x R:R pass-rate grid (data)
-  optimal_geometry(firm, entries)            -> the single best (R:R, risk%) cell
-  optimal_risk_by_firm(strategy, firms)      -> cross-firm best pass & its risk
-  plot_equity_paths / plot_strategy_comparison (kept for demos)
-"""
-"""from __future__ import annotations
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+    Bar LENGTH = pass rate (what it's ranked by). Bar COLOR = days-to-pass
+    (green=fast, red=slow, using the same ramp/direction pass rate uses
+    elsewhere -- "green always means good") -- so the pass-rate/speed
+    trade-off this session's runs are optimizing for is visible in one
+    glance instead of a table column you have to read number by number."""
+    df = summary_table_3d(g, top_n=top_n, max_days_to_pass=max_days_to_pass)
+    df = df[np.isfinite(df["days_to_pass"])]
+    if df.empty:
+        raise ValueError("No cells with a finite days_to_pass to plot -- "
+                         "widen max_days_to_pass or top_n.")
+    df = df.iloc[::-1].reset_index(drop=True)   # barh draws bottom-up; reverse so #1 lands on top
 
-from Firms import FirmConfig
-from Strategy import Strategy, SyntheticStrategy, EmpiricalStrategy
-from Engine import simulate
-from Backtest import ledger_for_rr, measured_winrate
+    labels = [f"{r.stop_pts:g}pt / {r.rr:g}R @ {r.risk_pct:.2f}%" for r in df.itertuples()]
+    days, pass_pct, wr = df["days_to_pass"].to_numpy(), df["pass_pct"].to_numpy(), df["wr"].to_numpy()
 
-_HEAT = LinearSegmentedColormap.from_list(
-    "rag", ["#8a1f1f", "#c0392b", "#e67e22", "#c9b02a", "#4a9a3a", "#1e7a2e"])
+    dmax = float(days.max())
+    norm = plt.Normalize(vmin=0, vmax=max(dmax, 1e-9))
+    cmap_fast_green = _HEAT.reversed()   # low days (fast) -> green end; high days (slow) -> red end
+    colors = cmap_fast_green(norm(days))
 
+    fig, ax = plt.subplots(figsize=(9.5, 0.55 * len(df) + 1.5))
+    bars = ax.barh(labels, pass_pct, color=colors, edgecolor="black", linewidth=0.4, height=0.62, zorder=3)
 
-# ---------------------------------------------------------------------------
-# Data-measured win rate vs R:R
-# ---------------------------------------------------------------------------
-def measured_wr_curve(entries, rr_grid, savepath=None):
-    wr = [measured_winrate(entries, rr) for rr in rr_grid]
-    edge = []
-    for rr in rr_grid:
-        R, _ = ledger_for_rr(entries, rr)
-        edge.append(float(R.mean()))
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(rr_grid, [w * 100 for w in wr], "-o", color="#2e86de")
-    ax.set_xlabel("R:R"); ax.set_ylabel("Measured win rate (%)")
-    ax.set_title(f"Win rate vs R:R (measured) — {entries.strategy} on {entries.source}")
-    ax.grid(alpha=.3)
-    if savepath:
-        fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return fig, dict(zip(rr_grid, wr)), dict(zip(rr_grid, edge))
+    for bar, p, d, w in zip(bars, pass_pct, days, wr):
+        ax.text(bar.get_width() + max(pass_pct) * 0.02, bar.get_y() + bar.get_height() / 2,
+                f"{p:.1f}%  ({d:.0f}d, WR {w:.0%})", va="center", ha="left", fontsize=9)
 
+    ax.set_xlim(0, max(pass_pct) * 1.30)
+    ax.set_xlabel("Pass rate (%)")
+    title_suffix = f"  (<= {max_days_to_pass:g} trading days to pass)" if max_days_to_pass is not None else ""
+    ax.set_title(f"Top {len(df)} cells{title_suffix}", fontweight="bold", loc="left")
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.tick_params(axis="y", length=0)
+    ax.xaxis.grid(True, color="#dddddd", linewidth=0.6, zorder=0)
+    ax.set_axisbelow(True)
 
-# ---------------------------------------------------------------------------
-# Risk search  (risk % is discovered)
-# ---------------------------------------------------------------------------
-def sweep_risk(strategy, firm, risk_pcts, n_paths=4_000, max_trades=400, seed=0):
-    pr, sp, fr = [], [], []
-    for rp in risk_pcts:
-        res = simulate(strategy, firm, firm.start_balance * rp / 100.0,
-                       n_paths=n_paths, max_trades=max_trades, seed=seed)
-        pr.append(res.pass_rate * 100); sp.append(res.mean_trades_to_pass)
-        fr.append(res.fail_rate * 100)
-    return np.array(pr), np.array(sp), np.array(fr)
+    sm = plt.cm.ScalarMappable(cmap=cmap_fast_green, norm=norm)
+    sm.set_array([])
+    cb = fig.colorbar(sm, ax=ax, pad=0.02, fraction=0.05)
+    cb.set_label("Days to pass (green = faster)")
 
-def _eval_pass (strategy, firm, risk_pct, n_paths, max_trades, seeds):
-    ps = [simulate(strategy, firm, risk_per_trade=firm.start_balance * risk_pct / 100.0,
-                   n_paths=n_paths, max_trades=max_trades, seed=s).pass_rate * 100
-          for s in seeds]
-    ps = np.array(ps)
-    return ps.mean(), ps.std(ddof=1) / np.sqrt(len(ps))  # mean, sem
-
-def find_optimal_risk(strategy, firm, risk_pcts=None, n_paths=4_000, max_trades=400,
-                      seed=0, seeds=None, tie_sd=1.0):
-    if risk_pcts is None:
-        risk_pcts = np.round(np.arange(0.10, 4.01, 0.10), 2)
-    seeds = range(seed, seed + 5) if seeds is None else seeds
-
-    # average each metric over the seed panel; track pass-rate SE across seeds
-    prs, sps, frs = [], [], []
-    for s in seeds:
-        pr_s, sp_s, fr_s = sweep_risk(strategy, firm, risk_pcts, n_paths, max_trades, s)
-        prs.append(pr_s); sps.append(sp_s); frs.append(fr_s)
-    prs = np.array(prs)                      # shape (n_seeds, n_risks)
-    pr = prs.mean(axis=0)                     # stable pass-rate estimate
-    pr_se = prs.std(axis=0, ddof=1) / np.sqrt(len(seeds))
-    sp = np.nanmean(np.array(sps), axis=0)   # speed averaged over seeds
-    fr = np.array(frs).mean(axis=0)
-
-    # tie = within tie_sd standard errors of the best (NOT exact equality)
-    best = int(pr.argmax())
-    cutoff = pr[best] - tie_sd * pr_se[best]
-    tied = np.flatnonzero(pr >= cutoff)
-
-    # your original preference: among tied, take the fastest
-    speeds = np.where(np.isnan(sp[tied]), np.inf, sp[tied])
-    b = tied[int(np.argmin(speeds))]
-
-    return {"risk_pcts": risk_pcts, "pass_pct": pr, "pass_se": pr_se,
-            "speed": sp, "fail_pct": fr, "tied_idx": tied,
-            "tied_risk_pcts": risk_pcts[tied].tolist(),
-            "opt_risk_pct": float(risk_pcts[b]),
-            "opt_risk_dollars": float(firm.start_balance * risk_pcts[b] / 100.0),
-            "opt_pass_pct": float(pr[b]), "opt_speed": float(sp[b])}
-
-
-def plot_risk_curve(strategy, firm, risk_pcts=None, n_paths=4_000, max_trades=400,
-                    seed=0, savepath=None):
-    r = find_optimal_risk(strategy, firm, risk_pcts, n_paths, max_trades, seed)
-    rp, pr, sp = r["risk_pcts"], r["pass_pct"], r["speed"]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(rp, pr, "-o", color="#2e86de", ms=3, label="Pass rate")
-    ax.axvline(r["opt_risk_pct"], color="#e67e22", ls="--",
-               label=f"optimum {r['opt_risk_pct']:.2f}%")
-    ax.scatter([r["opt_risk_pct"]], [r["opt_pass_pct"]], color="#e67e22", zorder=5)
-    ax.annotate(f"{r['opt_pass_pct']:.1f}% pass\n@ {r['opt_risk_pct']:.2f}% "
-                f"(${r['opt_risk_dollars']:.0f})", (r["opt_risk_pct"], r["opt_pass_pct"]),
-                textcoords="offset points", xytext=(10, -30), fontsize=9,
-                bbox=dict(boxstyle="round", fc="white", ec="0.7"))
-    ax.set_xlabel("Risk per trade (% of account)"); ax.set_ylabel("Pass rate (%)", color="#2e86de")
-    ax.set_ylim(0, 100)
-    ax2 = ax.twinx(); ax2.plot(rp, sp, color="#16a085", alpha=.6)
-    ax2.set_ylabel("Avg trades to pass", color="#16a085")
-    ax.set_title(f"Risk optimization — {firm.name}  [{strategy.name}]", fontweight="bold")
-    ax.legend(loc="lower left", fontsize=8); fig.tight_layout()
-    if savepath:
-        fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return fig, r
-
-
-# ---------------------------------------------------------------------------
-# Risk x R:R heatmap  (data-driven; the joint geometry optimizer)
-# ---------------------------------------------------------------------------
-def _grid(firm, entries, risk_pcts, rr_grid, n_paths, max_trades, seed):
-    wr = {rr: measured_winrate(entries, rr) for rr in rr_grid}
-    pass_grid = np.zeros((len(risk_pcts), len(rr_grid)))
-    speed_grid = np.full_like(pass_grid, np.nan)
-    for j, rr in enumerate(rr_grid):
-        R, days = ledger_for_rr(entries, rr)
-        strat = EmpiricalStrategy(R, name=f"{rr}R", day_ids=days)
-        pr, sp, _ = sweep_risk(strat, firm, risk_pcts, n_paths, max_trades, seed)
-        pass_grid[:, j] = pr; speed_grid[:, j] = sp
-    return pass_grid, speed_grid, wr
-
-
-def optimal_geometry(firm, entries, risk_pcts=None, rr_grid=None,
-                     n_paths=2_000, max_trades=300, seed=0):
-    Return the single best (R:R, risk%) cell for this firm + strategy
-    if risk_pcts is None:
-        risk_pcts = np.round(np.arange(0.25, 3.51, 0.25), 2)
-    if rr_grid is None:
-        rr_grid = [0.5, 1.0, 1.5, 2.0, 3.0]
-    pg, sg, wr = _grid(firm, entries, risk_pcts, rr_grid, n_paths, max_trades, seed)
-    bi, bj = np.unravel_index(np.nanargmax(pg), pg.shape)
-    return {"opt_rr": rr_grid[bj], "opt_risk_pct": float(risk_pcts[bi]),
-            "opt_pass_pct": float(pg[bi, bj]), "opt_speed": float(sg[bi, bj]),
-            "opt_wr": wr[rr_grid[bj]],
-            "pass_grid": pg, "speed_grid": sg, "risk_pcts": risk_pcts, "rr_grid": rr_grid}
-
-
-def risk_rr_heatmap(firm, entries, risk_pcts=None, rr_grid=None,
-                    n_paths=2_000, max_trades=300, seed=0, savepath=None):
-    g = optimal_geometry(firm, entries, risk_pcts, rr_grid, n_paths, max_trades, seed)
-    pg, sg, rps, rrs = g["pass_grid"], g["speed_grid"], g["risk_pcts"], g["rr_grid"]
-    wr = {rr: measured_winrate(entries, rr) for rr in rrs}
-    fig, ax = plt.subplots(figsize=(1.6 * len(rrs) + 2, 0.5 * len(rps) + 2))
-    im = ax.imshow(pg, cmap=_HEAT, vmin=0, vmax=100, aspect="auto")
-    ax.set_xticks(range(len(rrs)))
-    ax.set_xticklabels([f"{rr:g}R\n{wr[rr]:.0%} WR" for rr in rrs])
-    ax.set_yticks(range(len(rps)))
-    ax.set_yticklabels([f"{p:.2f}%\n(${firm.start_balance*p/100:.0f})" for p in rps], fontsize=8)
-    ax.set_xlabel("R:R  (win rate MEASURED from data)"); ax.set_ylabel("Risk per trade")
-    for i in range(len(rps)):
-        for j in range(len(rrs)):
-            v = pg[i, j]; s = "" if np.isnan(sg[i, j]) else f"\n{sg[i,j]:.0f} trd"
-            ax.text(j, i, f"{v:.0f}%{s}", ha="center", va="center", fontsize=7,
-                    color="white" if v < 55 else "black")
-    fig.colorbar(im, ax=ax, label="Pass rate (%)")
-    ax.set_title(f"Optimal risk geometry — {firm.name}\nbest: {g['opt_rr']:g}R @ "
-                 f"{g['opt_risk_pct']:.2f}% risk = {g['opt_pass_pct']:.0f}% pass "
-                 f"(~{g['opt_speed']:.0f} trades)", fontweight="bold", fontsize=10)
     fig.tight_layout()
-    if savepath:
-        fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return fig, g
+    if savepath: fig.savefig(savepath, dpi=130, bbox_inches="tight")
+    return fig
 
 
-# ---------------------------------------------------------------------------
-# Cross-firm
-# ---------------------------------------------------------------------------
-def optimal_risk_by_firm(strategy, firm_getter, firm_keys, risk_pcts=None,
-                         n_paths=3_000, max_trades=300, seed=0, savepath=None):
-    results = {k: find_optimal_risk(strategy, firm_getter(k), risk_pcts,
-                                    n_paths, max_trades, seed) for k in firm_keys}
-    names = [firm_getter(k).name for k in firm_keys]
-    opt_r = [results[k]["opt_risk_pct"] for k in firm_keys]
-    opt_p = [results[k]["opt_pass_pct"] for k in firm_keys]
-    y = np.arange(len(names))[::-1]
-    fig, ax = plt.subplots(1, 2, figsize=(14, 0.7 * len(names) + 2))
-    ax[0].barh(y, opt_p, color="#2e86de")
-    for yi, v, rr in zip(y, opt_p, opt_r):
-        ax[0].text(v + 0.5, yi, f"{v:.1f}%  @ {rr:.2f}% risk", va="center",
-                   fontsize=9, fontweight="bold")
-    ax[0].set_yticks(y); ax[0].set_yticklabels(names); ax[0].set_xlim(0, 100)
-    ax[0].set_xlabel("Best achievable pass rate (%)")
-    ax[0].set_title(f"Optimal risk & pass rate by firm\n[{strategy.name}]")
-    ax[1].barh(y, opt_r, color="#e67e22")
-    for yi, v in zip(y, opt_r):
-        ax[1].text(v + 0.02, yi, f"{v:.2f}%", va="center", fontsize=9)
-    ax[1].set_yticks(y); ax[1].set_yticklabels([])
-    ax[1].set_xlabel("Optimal risk per trade (%)"); ax[1].set_title("Discovered sizing")
-    fig.suptitle("MC-discovered risk per firm (no predefined risk %)", fontweight="bold")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
-    if savepath:
-        fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return results, fig
+def summary_table_3d(g, top_n=15, max_days_to_pass=None) -> pd.DataFrame:
+    """Flat table of the top cells across the whole 3-D grid, for a
+    plain-text readout alongside the chart (bubble size/color alone can be
+    hard to read exact numbers off of).
 
-days_to_pass_by_firm — per-firm distribution of DAYS TO PASS.
-
-Drop this into your analysis module (next to optimal_risk_by_firm). It reuses
-find_optimal_risk only to CHOOSE the risk per firm, then re-simulates at that
-risk with more paths and reports the days-to-pass distribution among passers.
-
-Left panel : box-and-whisker of days-to-pass (box = IQR, whiskers = p10-p90,
-             line = median), one row per firm.
-Right panel: pass rate, kept only as context (a fast median means little if
-             only a third of accounts pass).
-
-Requires in scope: simulate (from Engine), find_optimal_risk, numpy as np,
-matplotlib.pyplot as plt.
-
-def days_to_pass_by_firm(strategy, firm_getter, firm_keys, risk_pcts=None,
-                         n_paths=3_000, max_trades=300, seed=0,
-                         dist_paths=20_000, min_passers=5, savepath=None):
-    # 1) discover the risk per firm exactly as before (cheap pass)
-    results = {k: find_optimal_risk(strategy, firm_getter(k), risk_pcts,
-                                    n_paths, max_trades, seed) for k in firm_keys}
-    firms = [firm_getter(k) for k in firm_keys]
-    names = [f.name for f in firms]
-
-    # 2) re-simulate at the chosen risk with more paths to get a clean distribution
-    boxstats, medians, passrates, ns = [], [], [], []
-    for k, f in zip(firm_keys, firms):
-        rpct = results[k]["opt_risk_pct"]
-        risk_dollars = rpct / 100.0 * f.start_balance      # Engine wants a $ amount
-        sim = simulate(strategy, f, risk_per_trade=risk_dollars,
-                       n_paths=dist_paths, max_trades=max_trades, seed=seed)
-
-        d = sim.days_to_pass[sim.outcome == 1].astype(float)   # passers only
-        passrates.append(100.0 * float(np.mean(sim.outcome == 1)))
-        ns.append(int(d.size))
-
-        if d.size >= min_passers:
-            p10, q1, med, q3, p90 = np.percentile(d, [10, 25, 50, 75, 90])
-        elif d.size >= 1:
-            med = float(np.median(d)); q1 = q3 = med
-            p10, p90 = float(d.min()), float(d.max())
-        else:
-            med = q1 = q3 = p10 = p90 = np.nan
-        medians.append(med)
-        boxstats.append(dict(med=med, q1=q1, q3=q3, whislo=p10, whishi=p90, fliers=[]))
-
-    # 3) plot
-    y = np.arange(len(names))[::-1]
-    fig, ax = plt.subplots(1, 2, figsize=(14, 0.7 * len(names) + 2))
-
-    valid = [i for i, s in enumerate(boxstats) if np.isfinite(s["med"])]
-    if valid:
-        ax[0].bxp([boxstats[i] for i in valid], positions=[y[i] for i in valid],
-                  vert=False, showfliers=False, widths=0.55, patch_artist=True,
-                  boxprops=dict(facecolor="#2e86de", alpha=0.65),
-                  medianprops=dict(color="black", linewidth=2))
-    for i in range(len(names)):
-        if np.isfinite(medians[i]):
-            ax[0].text(boxstats[i]["whishi"] + 0.4, y[i],
-                       f"med {medians[i]:.0f}d  (n={ns[i]:,})",
-                       va="center", fontsize=8, fontweight="bold")
-        else:
-            ax[0].text(0.2, y[i], "no passes", va="center",
-                       fontsize=8, color="crimson")
-    ax[0].set_yticks(y); ax[0].set_yticklabels(names)
-    ax[0].set_xlim(left=0)
-    ax[0].set_xlabel("Days to pass  (box = IQR, whiskers = p10–p90, line = median)")
-    ax[0].set_title(f"Days-to-pass distribution by firm\n[{strategy.name}]")
-
-    ax[1].barh(y, passrates, color="#e67e22")
-    for yi, v in zip(y, passrates):
-        ax[1].text(v + 0.5, yi, f"{v:.1f}%", va="center", fontsize=9)
-    ax[1].set_yticks(y); ax[1].set_yticklabels([]); ax[1].set_xlim(0, 100)
-    ax[1].set_xlabel("Pass rate (%)"); ax[1].set_title("Pass rate (context)")
-
-    fig.suptitle("Days-to-pass by firm (at MC-discovered risk)", fontweight="bold")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
-    if savepath:
-        fig.savefig(savepath, dpi=130, bbox_inches="tight")
-
-    return results, fig, {"names": names, "medians": medians,
-                          "passrates": passrates, "n_passers": ns}
-
-# ---------------------------------------------------------------------------
-# Demos kept from before
-# ---------------------------------------------------------------------------
-def plot_equity_paths(firm, strategy, risk_per_trade, n_show=120, max_trades=300,
-                      seed=0, savepath=None):
-    res = simulate(strategy, firm, risk_per_trade, n_paths=n_show,
-                   max_trades=max_trades, seed=seed, record_paths=True)
-    fig, ax = plt.subplots(figsize=(9, 5))
-    for p in range(n_show):
-        color = {1: "#2e8b57", -1: "#c0392b", 0: "#999999"}[res.outcome[p]]
-        ax.plot(res.equity_paths[p], color=color, alpha=.35, lw=.8)
-    ax.axhline(firm.target_equity, color="#1e7a2e", lw=1.5)
-    ax.axhline(firm.initial_floor, color="#8a1f1f", lw=1.5)
-    ax.axhline(firm.start_balance, color="k", ls="--", lw=.8, alpha=.6)
-    ax.set_xlabel("Trade #"); ax.set_ylabel("Equity ($)")
-    ax.set_title(f"Equity paths — {firm.name} [{strategy.name}] "
-                 f"risk ${risk_per_trade:.0f}\npass {res.pass_rate:.1%} / "
-                 f"fail {res.fail_rate:.1%} / ongoing {res.ongoing_rate:.1%}")
-    if savepath:
-        fig.savefig(savepath, dpi=130, bbox_inches="tight")
-    return fig"""
+    Pass `max_days_to_pass` to filter OUT cells that would take longer than
+    that many trading days to pass (same constraint risk_geometry_3d()'s
+    `best` cell uses) before ranking by pass_pct -- otherwise the top of
+    this table can be dominated by high-pass/low-frequency cells that take
+    months to actually reach in real trading."""
+    stop_grid, risk_pcts, rr_grid = g["stop_grid"], g["risk_pcts"], g["rr_grid"]
+    pass_grid, speed_grid, wr_grid = g["pass_grid"], g["speed_grid"], g["wr_grid"]
+    days_grid = g.get("days_grid")
+    trades_per_day = g.get("trades_per_day")
+    rows = []
+    for si, sp in enumerate(stop_grid):
+        for ki, rr in enumerate(rr_grid):
+            for ri, rp in enumerate(risk_pcts):
+                p = pass_grid[si, ri, ki]
+                if not np.isfinite(p):
+                    continue
+                d2p = float(days_grid[si, ri, ki]) if days_grid is not None else np.nan
+                rows.append(dict(stop_pts=sp, target_pts=sp * rr, rr=rr, risk_pct=rp,
+                                 pass_pct=p, speed=speed_grid[si, ri, ki],
+                                 days_to_pass=d2p,
+                                 trades_per_day=float(trades_per_day[si]) if trades_per_day is not None else np.nan,
+                                 wr=wr_grid[si, ki], trades=int(g["trades_grid"][si])))
+    df = pd.DataFrame(rows)
+    if max_days_to_pass is not None and "days_to_pass" in df:
+        kept = df[df["days_to_pass"] <= max_days_to_pass]
+        if len(kept):   # only apply the filter if it doesn't wipe out every row
+            df = kept
+    df = df.sort_values("pass_pct", ascending=False)
+    return df.head(top_n).reset_index(drop=True)

@@ -312,7 +312,7 @@ def payout_geometry(fc: FundedConfig, entries, risk_pcts=None, rr_grid=None,
     objective: 'p25' (robust), 'median', or 'mean' of net dollars withdrawn.
     Returns grids + the single best cell.  Mirrors Analysis.optimal_geometry.
     """
-    from Backtest import ledger_for_rr
+    from Rules.strategies.superseded.Backtest import ledger_for_rr
     from Strategy import EmpiricalStrategy
     if risk_pcts is None:
         risk_pcts = np.round(np.arange(0.25, 2.51, 0.25), 2)
@@ -416,7 +416,7 @@ def plot_withdrawn_dist(res, title=None, savepath=None):
 def compare_firms(entries, firm_keys, rr, risk_pct, horizon_days=42,
                   n_paths=4_000, max_trades=1_200, seed=0, savepath=None):
     """Same geometry across firms: bars of mean/p25 $ withdrawn + blow-up rate."""
-    from Backtest import ledger_for_rr
+    from Rules.strategies.superseded.Backtest import ledger_for_rr
     from Strategy import EmpiricalStrategy
     R, days = ledger_for_rr(entries, rr)
     strat = EmpiricalStrategy(R, day_ids=days)

@@ -15,9 +15,9 @@ import matplotlib
 matplotlib.use("Agg")
 
 from Firms import get_firm
-from Backtest import build_entries, ledger_for_rr, measured_winrate
+from Rules.strategies.superseded.Backtest import build_entries, ledger_for_rr, measured_winrate
 from Strategy import EmpiricalStrategy
-from Analysis import measured_wr_curve, plot_risk_curve, risk_rr_heatmap
+from Rules.superseded.Analysis import measured_wr_curve, plot_risk_curve, risk_rr_heatmap
 
 OUT = os.environ.get("OUT_DIR", "outputs")
 os.makedirs(OUT, exist_ok=True)

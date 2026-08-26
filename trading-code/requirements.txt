@@ -1,0 +1,11 @@
+# Rules/ pipeline dependencies. Install into the project's .venv:
+#   .venv\Scripts\python.exe -m pip install -r requirements.txt
+#
+# pyarrow must be >=19.0.1 -- 19.0.0 has a known parquet-reading bug
+# (apache/arrow#45283, "Repetition level histogram size mismatch").
+numpy
+pandas
+matplotlib
+pyarrow>=19.0.1
+ipykernel
+databento     # decode .dbn batch downloads in databento/build_continuous.py

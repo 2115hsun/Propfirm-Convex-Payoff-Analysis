@@ -1,0 +1,10 @@
+﻿Rules/data/
+*.csv.zst
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Raw DataBento downloads dropped under databento/ for build_continuous.py to
+# process -- personal/large binary data, not the script itself.
+databento/*
+!databento/build_continuous.py

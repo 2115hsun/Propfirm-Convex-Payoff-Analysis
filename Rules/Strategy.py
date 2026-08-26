@@ -14,8 +14,22 @@ The engine calls strategy.draw(n_paths, n_trades, rng) and gets:
 """
 from __future__ import annotations
 import numpy as np
+import datetime as dt
 
-
+class Timewindow:
+    wants_bars = True
+    def __init__(self, inner, start="09:30", end="16:00"):
+        self.inner = inner
+        self.start = dt.time.fromisoformat(start)
+        self.end = dt.time.fromisoformat(end)
+        self.name = getattr(inner, "name", f"{inner.__class__.__name__} {start}-{end}")
+    def entries(self, bars):
+        idx, direction = self.inner.entries(bars)
+        idx = np.asarray(idx); direction = np.asarray(direction)
+        times = bars.index[idx].time
+        keep = np.array([self.start <= t <= self.end for t in times], dtype=bool)
+        return idx[keep], direction[keep]
+    
 class Strategy:
     name: str = "strategy"
 

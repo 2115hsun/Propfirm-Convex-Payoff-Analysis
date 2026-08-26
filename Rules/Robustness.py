@@ -11,8 +11,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 
-from Backtest import backtest_entries
-from Analysis import optimal_geometry
+from Rules.strategies.superseded.Backtest import backtest_entries
+from Rules.superseded.Analysis import optimal_geometry
 
 _HEAT = LinearSegmentedColormap.from_list(
     "rag", ["#8a1f1f", "#c0392b", "#e67e22", "#c9b02a", "#4a9a3a", "#1e7a2e"])
@@ -95,7 +95,7 @@ def validate_oos(strategy_factory, oos_bars, firm, cell, risk_pcts, rr_grid,
                  n_paths=1500, max_trades=250, min_trades=25, savepath=None):
     """Run the chosen cell on OOS rolling windows; compare to its IS distribution."""
     from Strategy import EmpiricalStrategy
-    from Backtest import ledger_for_rr
+    from Rules.strategies.superseded.Backtest import ledger_for_rr
     from Engine import simulate
     i, j = cell["i"], cell["j"]
     is_dist = is_grids[:, i, j]
