@@ -97,7 +97,8 @@ def risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid,
             continue   # too few trades at this stop width to trust -- leave this slab NaN
         for ki, rr in enumerate(rr_grid):
             R, days = ledger_for_rr(E, rr)
-            strat = EmpiricalStrategy(R, name=f"{sp:g}pt {rr:g}R", day_ids=days)
+            strat = EmpiricalStrategy(R, name=f"{sp:g}pt {rr:g}R", day_ids=days,
+                                      mae_R=getattr(E, "mae_before", None))
             wr_grid[si, ki] = measured_winrate(E, rr)
             for ri, rp in enumerate(risk_pcts):
                 res = simulate(strat, firm, firm.start_balance * rp / 100.0,
@@ -155,7 +156,8 @@ def oos_check(firm, strategy, bars_oos, stop_points, rr, risk_pct,
                     warning=f"only {n_trades} OOS trades (< min_trades={min_trades}) -- "
                             f"too few to trust; widen OOS_FRACTION or treat as inconclusive")
     R, days = ledger_for_rr(E, rr)
-    strat_oos = EmpiricalStrategy(R, name=f"OOS {stop_points:g}pt {rr:g}R", day_ids=days)
+    strat_oos = EmpiricalStrategy(R, name=f"OOS {stop_points:g}pt {rr:g}R", day_ids=days,
+                                  mae_R=getattr(E, "mae_before", None))
     res = simulate(strat_oos, firm, firm.start_balance * risk_pct / 100.0,
                    n_paths=n_paths, max_trades=max_trades, seed=seed)
     return dict(trades=n_trades, pass_pct=res.pass_rate * 100, days_to_pass=res.mean_days_to_pass,

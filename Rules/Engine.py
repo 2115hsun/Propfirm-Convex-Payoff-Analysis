@@ -35,7 +35,7 @@ def simulate(strategy: Strategy, firm: FirmConfig, risk_per_trade: float,
              sizing="flat", comfort_room=None, min_risk_frac=0.10):
     rng = np.random.default_rng(seed)
     N, T = n_paths, max_trades
-    R, new_day = strategy.draw(N, T, rng)
+    R, new_day, mae = strategy.draw(N, T, rng)   # mae: adverse excursion (R>0) or None
 
     flat = (sizing == "flat")
     if flat:
@@ -49,10 +49,10 @@ def simulate(strategy: Strategy, firm: FirmConfig, risk_per_trade: float,
     dd = firm.max_drawdown
     lock = firm.trail_lock
 
-    equity   = np.full(N, start)
-    peak     = np.full(N, start)
-    eod_peak = np.full(N, start)
-    dd_level = np.full(N, start - dd)
+    equity   = np.full(N, start, dtype=float)
+    peak     = np.full(N, start, dtype=float)
+    eod_peak = np.full(N, start, dtype=float)
+    dd_level = np.full(N, start - dd, dtype=float)
     day_pnl  = np.zeros(N)
     best_day = np.full(N, -np.inf)
     trades_in_day = np.zeros(N, dtype=int)
@@ -77,6 +77,25 @@ def simulate(strategy: Strategy, firm: FirmConfig, risk_per_trade: float,
             room = equity - dd_level                       # $ to the floor, right now
             scale = np.clip(room / comfort_room, min_risk_frac, 1.0)
             pnl_t = R[:, t] * (risk_per_trade * scale)
+
+        # --- INTRA-TRADE MAE BREACH (dip below floor then recover = liquidated) ---
+        if mae is not None:
+            if flat:
+                risk_now = risk_per_trade
+            else:
+                room = equity - dd_level
+                risk_now = risk_per_trade * np.clip(room / comfort_room, min_risk_frac, 1.0)
+            # A -1R outcome IS a stop: its loss is capped at 1R, so its intrabar
+            # excursion must be capped at 1R for the breach too (no phantom deep
+            # breach from a gap/spike past the stop). Non-stopped trades use actual mae.
+            stopped_t = R[:, t] <= -1.0 + 1e-9
+            mae_eff = np.where(stopped_t, np.minimum(mae[:, t], 1.0), mae[:, t])
+            intra_low = equity - mae_eff * risk_now
+            mae_breach = live & (mae_eff > 0) & (intra_low <= dd_level + 1e-9)
+            status[mae_breach] = -1
+            ttp[mae_breach] = -1
+            dtp[mae_breach] = -1
+            live = status == 0
 
         equity[live] += pnl_t[live]
         day_pnl[live] += pnl_t[live]

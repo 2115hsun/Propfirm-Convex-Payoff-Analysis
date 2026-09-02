@@ -154,6 +154,9 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
                          "backtest_entries(..., detail=True) -- entry_time missing.")
 
     R, day_ids = ledger_for_rr(entries, rr)
+    # intra-trade adverse excursion (R, positive) per trade; None on old ledgers
+    mae = getattr(entries, 'mae_before', None)
+    stopped_arr = getattr(entries, 'stopped', None)
     risk_per_trade = firm.start_balance * risk_pct / 100.0
 
     is_intraday = firm.dd_type == DrawdownType.INTRADAY_TRAIL
@@ -221,6 +224,23 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
 
         i = acc
         entries_used += 1
+
+        # --- INTRA-TRADE MAE BREACH (dip below floor then recover = liquidated) ---
+        # ONLY for NON-STOPPED trades: a winner/timeout that dipped through the floor
+        # mid-trade would have been liquidated on the spot. Stopped trades are handled
+        # by the normal -1R loss path below -- their (possibly >1R) intrabar excursion
+        # must NOT drive a deeper phantom breach, since the ledger caps their loss at -1R.
+        is_stopped_k = (stopped_arr is not None and bool(stopped_arr[k]))
+        if (mae is not None and not is_stopped_k
+                and np.isfinite(mae[k]) and mae[k] > 0):
+            intra_low = equity[i] - min(mae[k], 1.0) * risk_per_trade
+            if intra_low <= dd_level[i] + 1e-9:
+                trades_taken[i] += 1
+                last_traded_day[i] = day
+                curves[i].append((entries.entry_time[k], float(intra_low)))
+                _finalize(i, "FAIL", entries.entry_time[k])
+                continue
+
         pnl = R[k] * risk_per_trade
         equity[i] += pnl
         day_pnl[i] += pnl

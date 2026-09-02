@@ -88,6 +88,7 @@ class Entries:
     source: str = "?"
     strategy: str = "?"
     stop_points: float = 0.0  # the fixed stop distance (points) this ledger was built with
+    mae_before: np.ndarray = None  # max ADVERSE excursion (R, positive) before the trade resolved
     sizes: "np.ndarray | None" = None   # per-trade size multiplier (None = all 1.0)
     # Populated only when backtest_entries(..., detail=True) -- lets trade_log()
     # print exact wall-clock times/prices for manual cross-checking against
@@ -148,6 +149,7 @@ def backtest_entries(strategy, bars, stop_points=25.0, max_hold=480,
         sizes_in = np.ones(len(idx), float)
 
     day_ids, mfe_before, stopped, timeout_R, sizes = [], [], [], [], []
+    mae_before = []   # deepest ADVERSE excursion (R, positive number) before the trade resolved
     entry_times, entry_prices, directions, stop_prices, exit_times = [], [], [], [], []
     day_counter, last_day, busy_until = -1, None, -1
 
@@ -193,12 +195,13 @@ def backtest_entries(strategy, bars, stop_points=25.0, max_hold=480,
     # once the stop bar is reached, do not credit any
     # favorable excursion from that same bar.
             mfe = float(fav[:sb].max()) if sb > 0 else 0.0
-
+            mae = float(adv[:sb + 1].max()) if adv.size else 0.0   # includes the stop touch (=1R)
             was_stopped = True
             to_R = np.nan
             exit_bar = j0 + sb
         else:
             mfe = float(fav.max()) if fav.size else 0.0
+            mae = float(adv.max()) if adv.size else 0.0            # deepest dip against us, never reached 1R
             was_stopped = False
             to_R = float((close[j1 - 1] - entry) / stop_dist * d)
             exit_bar = j1 - 1
@@ -206,7 +209,7 @@ def backtest_entries(strategy, bars, stop_points=25.0, max_hold=480,
         day = dates[e]
         if day != last_day:
             day_counter += 1; last_day = day
-        day_ids.append(day_counter); mfe_before.append(mfe)
+        day_ids.append(day_counter); mfe_before.append(mfe); mae_before.append(mae)
         stopped.append(was_stopped); timeout_R.append(to_R)
         sizes.append(sizes_in[k])
         if detail:
@@ -230,6 +233,7 @@ def backtest_entries(strategy, bars, stop_points=25.0, max_hold=480,
                   bar_duration=bar_dur)
     return Entries(np.array(day_ids), np.array(mfe_before), np.array(stopped),
                    np.array(timeout_R), n_bars=n, n_days=int(day_counter + 1),
+                   mae_before=np.array(mae_before),
                    strategy=getattr(strategy, "name", "?"), stop_points=float(stop_points),
                    sizes=np.array(sizes), **kw)
 
