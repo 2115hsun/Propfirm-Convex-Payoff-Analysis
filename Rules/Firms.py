@@ -116,7 +116,6 @@ FIRMS: dict[str, FirmConfig] = {
         daily_loss_limit=None, dll_behavior=DLLBehavior.NONE,
         consistency_pct=0.50, min_days=2,
     ),
-
     # Topstep — Trading Combine. Trailing MLL ($2,000), no DLL,
     # consistency = best day <= 50% of total profit, min 2 days.
     "topstep": FirmConfig(
@@ -125,6 +124,33 @@ FIRMS: dict[str, FirmConfig] = {
         dd_type=DrawdownType.EOD_TRAIL, trail_lock=50_000,  # VERIFY (EOD vs intraday trail)
         daily_loss_limit=None, dll_behavior=DLLBehavior.NONE,
         consistency_pct=0.50, min_days=2,
+    ),
+        # ── Lucid 25K accounts (VERIFIED via web, Aug 2026) ──────────────────────
+    "lucid_pro_25k": FirmConfig(
+        key="lucid_pro_25k",
+        name="Lucid Pro 25K",
+        start_balance=25_000.0,
+        profit_target=1_250.0,               # target = $26,250
+        max_drawdown=1_000.0,                # floor starts at $24,000, EOD-trails
+        dd_type=DrawdownType.EOD_TRAIL,
+        trail_lock=25_000.0,                 # locks (static) once floor reaches start balance
+        daily_loss_limit=None,               # NO DLL on the 25K
+        dll_behavior=DLLBehavior.NONE,
+        consistency_pct=None,                # LucidPro eval: no consistency rule
+        min_days=1,                          # 1-day pass allowed
+    ),
+    "lucid_flex_25k": FirmConfig(
+        key="lucid_flex_25k",
+        name="Lucid Flex 25K",
+        start_balance=25_000.0,
+        profit_target=1_250.0,
+        max_drawdown=1_000.0,
+        dd_type=DrawdownType.EOD_TRAIL,
+        trail_lock=25_000.0,                 # EOD trail, converts to static at start+target
+        daily_loss_limit=None,               # Flex: no DLL
+        dll_behavior=DLLBehavior.NONE,
+        consistency_pct=0.50,                # Flex eval: 50% consistency rule
+        min_days=5,                          # Flex: min 5 trading days
     ),
 }
 
