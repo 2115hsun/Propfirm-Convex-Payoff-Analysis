@@ -59,10 +59,6 @@ print("total prob:", sum(d.values()), "(must be 1.0)")
 
 #====================================================================================
 
-if d == "floor": V_floor
-elif d == "target": V_target
-else: V[d]
-
 def bellman_backup(x_index, coin, V, Floor, Target, Dx, risk):
     """
     Expected value of taking one trade (with `coin`) from grid cell x_index.
@@ -83,3 +79,27 @@ def bellman_backup(x_index, coin, V, Floor, Target, Dx, risk):
         expected += prob * v
 
     return expected
+
+#====================================================================================
+
+def solve(COINS, V_init, Floor, Target, Dx, risk, tol=1e-10, max_sweeps=10000):
+    """Value iteration over the equity grid. Returns (V, policy)."""
+    V = V_init.copy()                       # start from the initial guess (zeros)
+    policy = {i: None for i in range(len(grid))}
+
+    for sweep in range(max_sweeps):
+        delta = 0.0
+        newV = V.copy()
+        for i in range(len(grid)):          # sweep every interior grid cell
+            # try every RR, keep the best (max value AND argmax RR)
+            q_by_rr = [(bellman_backup(i, COINS[rho], V, Floor, Target, Dx, risk), rho)
+                       for rho in COINS]
+            best_q, best_rho = max(q_by_rr, key=lambda x: x[0])  # <-- FILL IN: pick the largest
+            newV[i]   = best_q                  # <-- FILL IN: optimal value at cell i
+            policy[i] = best_rho                  # <-- FILL IN: the RR that achieved it
+            delta = max(delta, abs(newV[i] - V[i]))
+        V = newV
+        if delta < tol:
+            print(f"converged after {sweep+1} sweeps")
+            break
+    return V, policy
