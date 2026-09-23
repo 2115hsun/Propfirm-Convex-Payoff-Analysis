@@ -3,8 +3,9 @@ from math import floor
 import numpy as np
 import pickle
 
-Floor = 0.0
-Target = 2000
+Floor = 100
+Target = 2100
+Entry = 1100
 Dx = 50
 
 grid = np.arange(Floor+Dx, Target, Dx)  # [50, 100, ..., 1950]
@@ -24,16 +25,18 @@ def collapse_to_coin(R_array):
 
 Coins = {rho: collapse_to_coin(R_array) for rho, R_array in RETURN_ARRAYS.items()}
 
+print(f"ledger n = {len(RETURN_ARRAYS[1.0])} trades")
 for rho in sorted(Coins):
-    edge = sum(p * r for r, p in Coins[rho])
-    assert abs(sum(p for p, r in Coins[rho]) - 1.0) < 1e-9 
+    edge = sum(p * r for p, r in Coins[rho])
+    assert abs(sum(p for p, r in Coins[rho]) - 1.0) < 1e-9
+    print(f"RR={rho:<4}: edge={edge:+.4f}R")
 
 #====================================================================================
 
 def cell_index(x_prime, Floor, Dx):
     return int((x_prime - Floor) / Dx - 1)
 
-def add_to_grid(x_prime, prob, dest):
+def add_to_grid(x_prime, prob, dest, Floor=Floor, Target=Target, Dx=Dx):
     """Add a transition probability to the appropriate grid states."""
     if x_prime <= Floor:
         dest["floor"] = dest.get("floor", 0.0) + prob
@@ -42,7 +45,8 @@ def add_to_grid(x_prime, prob, dest):
     else:
         # Case 3: INTERIOR — interpolate x_prime across two grid cells.
         lo = cell_index(x_prime, Floor, Dx)
-        f = (x_prime - grid[lo]) / Dx
+        x_lo = Floor + (lo + 1) * Dx
+        f = (x_prime - x_lo) / Dx
 
         # lower half of the weight
         if lo < 0:
@@ -60,12 +64,8 @@ def transition (x, coin, Floor, Target, Dx, risk):
     dest = {}
     for proob, R in coin:
         x_prime = x + R * risk
-        add_to_grid(x_prime, proob, dest)
+        add_to_grid(x_prime, proob, dest, Floor, Target, Dx)
     return dest
-
-d = transition(1000, Coins[1.5], Floor, Target, Dx, risk)
-print("destinations:", d)
-print("total prob:", sum(d.values()), "(must be 1.0)")
 
 #====================================================================================
 
@@ -114,7 +114,6 @@ def solve(COINS, V_init, Floor, Target, Dx, risk, tol=1e-10, max_sweeps=10000):
             break
     return V, policy
 
-
 #====================================================================================
 
 V_init = np.zeros(len(grid))     # initial guess: all zeros
@@ -128,10 +127,18 @@ for i in range(0, len(grid), 5):      # every 5th cell
 
 #====================================================================================
 
-
 print("cell  equity   bestRR  bestV   2ndRR  2ndV   gap")
 for i in range(len(grid)):
     qs = sorted([(bellman_backup(i, Coins[rho], V_star, Floor, Target, Dx, risk), rho)
                  for rho in Coins], reverse=True)
     (v1,rr1),(v2,rr2) = qs[0], qs[1]
     print(f"  {i:2d}  ${grid[i]:>6.0f}   {rr1:<5} {v1:.4f}  {rr2:<5} {v2:.4f}  {v1-v2:.4f}")
+
+#====================================================================================
+
+d = transition(Entry, Coins[1.5], Floor, Target, Dx, risk)
+print("total prob:", sum(d.values()))
+
+i_entry = cell_index(Entry, Floor, Dx)          # = 19
+print(f"P(reach $27,100 before $25,100 | locked at $26,100) = "
+      f"{V_star[i_entry]:.4f}  best RR {policy[i_entry]}")
