@@ -126,6 +126,9 @@ print("\ncell   equity   V*(prob reach target)   optimal RR")
 for i in range(0, len(grid), 5):      # every 5th cell
     print(f"  {i:2d}   ${grid[i]:>6.0f}        {V_star[i]:.4f}              {policy[i]}")
 
+#====================================================================================
+
+
 print("cell  equity   bestRR  bestV   2ndRR  2ndV   gap")
 for i in range(len(grid)):
     qs = sorted([(bellman_backup(i, Coins[rho], V_star, Floor, Target, Dx, risk), rho)
