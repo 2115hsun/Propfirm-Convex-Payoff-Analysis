@@ -16,7 +16,7 @@ V_target = 1.0
 with open("ledgers.pkl", "rb") as f:
     RETURN_ARRAYS = pickle.load(f)
 
-risk = 500
+risk = 250
 
 def collapse_to_coin(R_array):
     values, counts = np.unique(R_array, return_counts=True)
@@ -41,10 +41,20 @@ def add_to_grid(x_prime, prob, dest):
         dest["target"] = dest.get("target", 0.0) + prob
     else:
         # Case 3: INTERIOR — interpolate x_prime across two grid cells.
-        lo = cell_index(x_prime, Floor, Dx)     # index of cell just below
-        f = (x_prime - grid[lo]) / Dx            # fraction of the way up the gap
-        dest[lo] = dest.get(lo, 0.0) + prob * (1 - f)
-        dest[lo + 1] = dest.get(lo + 1, 0.0) + prob * f
+        lo = cell_index(x_prime, Floor, Dx)
+        f = (x_prime - grid[lo]) / Dx
+
+        # lower half of the weight
+        if lo < 0:
+            dest["floor"] = dest.get("floor", 0.0) + prob * (1 - f)
+        else:
+            dest[lo] = dest.get(lo, 0.0) + prob * (1 - f)
+
+        # upper half of the weight
+        if lo + 1 >= len(grid):
+            dest["target"] = dest.get("target", 0.0) + prob * f
+        else:
+            dest[lo + 1] = dest.get(lo + 1, 0.0) + prob * f
 
 def transition (x, coin, Floor, Target, Dx, risk):
     dest = {}
@@ -103,3 +113,22 @@ def solve(COINS, V_init, Floor, Target, Dx, risk, tol=1e-10, max_sweeps=10000):
             print(f"converged after {sweep+1} sweeps")
             break
     return V, policy
+
+
+#====================================================================================
+
+V_init = np.zeros(len(grid))     # initial guess: all zeros
+
+V_star, policy = solve(Coins, V_init, Floor, Target, Dx, risk)
+
+# show the value function and optimal RR at a few cushion levels
+print("\ncell   equity   V*(prob reach target)   optimal RR")
+for i in range(0, len(grid), 5):      # every 5th cell
+    print(f"  {i:2d}   ${grid[i]:>6.0f}        {V_star[i]:.4f}              {policy[i]}")
+
+print("cell  equity   bestRR  bestV   2ndRR  2ndV   gap")
+for i in range(len(grid)):
+    qs = sorted([(bellman_backup(i, Coins[rho], V_star, Floor, Target, Dx, risk), rho)
+                 for rho in Coins], reverse=True)
+    (v1,rr1),(v2,rr2) = qs[0], qs[1]
+    print(f"  {i:2d}  ${grid[i]:>6.0f}   {rr1:<5} {v1:.4f}  {rr2:<5} {v2:.4f}  {v1-v2:.4f}")
