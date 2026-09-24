@@ -34,7 +34,7 @@ for rho in sorted(Coins):
 #====================================================================================
 
 def cell_index(x_prime, Floor, Dx):
-    return int((x_prime - Floor) / Dx - 1)
+    return floor((x_prime - Floor) / Dx - 1)
 
 def add_to_grid(x_prime, prob, dest, Floor=Floor, Target=Target, Dx=Dx):
     """Add a transition probability to the appropriate grid states."""
@@ -142,3 +142,5 @@ print("total prob:", sum(d.values()))
 i_entry = cell_index(Entry, Floor, Dx)          # = 19
 print(f"P(reach $27,100 before $25,100 | locked at $26,100) = "
       f"{V_star[i_entry]:.4f}  best RR {policy[i_entry]}")
+
+assert all(p >= 0 for p in d.values()), f"negative probability: {d}"
