@@ -2,6 +2,7 @@ from math import floor
 import numpy as np
 import pickle
 
+VERBOSE = False
 # Setting up Grid for Prelock Value Function =================================================================================
 
 DD_limit = 1000
@@ -22,20 +23,24 @@ print("V_pre shape:", V_pre.shape)
 
 def add_to_grid_pre(m, x_prime, prob, dest):
     floor_now = m - DD_limit
-    print(f"  landing x'={x_prime:>6}   peak m={m}   floor={floor_now}", end="   -> ")
+    if VERBOSE:
+        print(f"  landing x'={x_prime:>6}   peak m={m}   floor={floor_now}", end="   -> ")
 
     if x_prime <= floor_now:
-        print("BREACH (at or below floor)")
+        if VERBOSE:
+            print("BREACH (at or below floor)")
         dest["breach"] = dest.get("breach", 0.0) + prob
 
     elif x_prime >= Lock_peak:
-        print(f"LOCK (hand off to post-lock at x'={x_prime}, "
-              f"cushion above $25,100 floor = {x_prime - 100})")
+        if VERBOSE:
+            print(f"LOCK (hand off to post-lock at x'={x_prime}, "
+                  f"cushion above $25,100 floor = {x_prime - 100})")
         key = ("lock", x_prime)                       # x' kept in the key
         dest[key] = dest.get(key, 0.0) + prob
 
     elif x_prime < m:                                 # SAME PEAK -> (m' = m, y' = m - x')
-        print(f"SAME PEAK  (m'={m}, y'={m - x_prime})")
+        if VERBOSE:
+            print(f"SAME PEAK  (m'={m}, y'={m - x_prime})")
         j      = int(int(m/Dx))                    # row of the current peak (exact)
         y_new  = m - x_prime                         # new drawdown
         k_lo   = floor(y_new/Dx)                  # column at or below y_new
@@ -51,7 +56,8 @@ def add_to_grid_pre(m, x_prime, prob, dest):
         dest[key_hi] = dest.get(key_hi, 0.0) + prob * f
 
     else:                                        # NEW PEAK -> (m' = x', y' = 0)
-        print(f"NEW PEAK   (m'={x_prime}, y'=0)")
+        if VERBOSE:
+            print(f"NEW PEAK   (m'={x_prime}, y'=0)")
         j_lo = floor(x_prime/Dx)             # row at or below x'  (floor, Dx)
         f    = (x_prime - m_grid[j_lo]) / Dx     # fraction of the way to the next row
 
@@ -64,12 +70,35 @@ def add_to_grid_pre(m, x_prime, prob, dest):
             key_hi = (j_lo + 1, 0)
         dest[key_hi] = dest.get(key_hi, 0.0) + prob * f
 
+# Load the trade data ===================================================================
+
+with open("ledgers.pkl", "rb") as f:
+    RETURN_ARRAYS = pickle.load(f)
+
+risk = 250
+
+def collapse_to_coin(R_array):
+    values, counts = np.unique(R_array, return_counts=True)
+    return list (zip(counts / counts.sum(), values))  # [(prob, R), ...]
+
+Coins = {rho: collapse_to_coin(R_array) for rho, R_array in RETURN_ARRAYS.items()}
+
+print(f"ledger n = {len(RETURN_ARRAYS[1.0])} trades")
+for rho in sorted(Coins):
+    edge = sum(p * r for p, r in Coins[rho])
+    assert abs(sum(p for p, r in Coins[rho]) - 1.0) < 1e-9
+    print(f"RR={rho:<4}: edge={edge:+.4f}R")
 
 
+# Transition function for pre-lock value function ===========================================
 
-
-# --- routing test from state m=500, y=200 (equity x=300, floor=-500) ---
-for x_prime in [130, 100, -480]:
+def transition_pre(j, k, coin, risk):
+    """All landings from pre-lock cell (j, k) for one coin. Returns {destination: prob}."""
+    m = m_grid[j]              # the peak of this cell
+    y = y_grid[k]              # the drawdown of this cell
+    x = m-y               # current equity
     dest = {}
-    add_to_grid_pre(500, x_prime, 1.0, dest)
-    print("      dest:", dest, "  total:", sum(dest.values()))
+    for prob, R in coin:
+        x_prime =  x + R*risk    # where this outcome lands
+        add_to_grid_pre(m, x_prime, prob, dest)
+    return dest
