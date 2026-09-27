@@ -1,6 +1,7 @@
 from math import floor
 import numpy as np
 import pickle
+import Postlock as post 
 
 VERBOSE = False
 # Setting up Grid for Prelock Value Function =================================================================================
@@ -113,3 +114,29 @@ for j in range(len(m_grid)):                  # every peak row
             assert abs(sum(d.values()) - 1.0) < 1e-9, f"mass != 1 at ({j},{k}), RR {rho}"
             assert min(d.values()) >= 0, f"negative prob at ({j},{k}), RR {rho}: {d}"
 print(f"transition_pre check passed: {len(m_grid) * len(y_grid)} cells x {len(Coins)} RRs")
+
+
+# Making Postlock importable without it running and printing everything ====================
+
+from Postlock import solve, grid, Coins, risk, Floor, Target, Dx
+
+# ---- 5. run only when executed directly ------------------------------------------------
+V_post = post.V_star 
+
+def v_post(x):
+    """Post-lock value at any equity x (dollars above the $25,000 start)."""
+    if x >= post.Target:
+        return 1.0                  # at or past $27,100: payout reached
+    if x <= post.Floor:
+        return 0                      # at or below $25,100: dead
+
+    lo   = post.cell_index(x, post.Floor, post.Dx)      # post-lock cell at or below x
+    x_lo = post.Floor + (lo + 1) * post.Dx              # its dollar value
+    f    = (x - x_lo) / post.Dx                         # fraction toward the next cell
+
+    v_lo = 0.0 if lo < 0 else V_post[lo]                          # below the first cell -> floor
+    v_hi = 1.0 if lo + 1 >= len(post.grid) else V_post[lo + 1]    # past the last cell -> target
+    return (1 - f) * v_lo + f * v_hi
+
+for x in [1100, 1375, 2100, 2500]:
+    print(f"v_post({x}) = {v_post(x):.4f}")
