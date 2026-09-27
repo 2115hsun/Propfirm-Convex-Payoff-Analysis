@@ -102,3 +102,14 @@ def transition_pre(j, k, coin, risk):
         x_prime =  x + R*risk    # where this outcome lands
         add_to_grid_pre(m, x_prime, prob, dest)
     return dest
+
+
+# All cell check ====================================================
+
+for j in range(len(m_grid)):                  # every peak row
+    for k in range(len(y_grid)):              # every drawdown column
+        for rho in Coins:                  # every RR
+            d = transition_pre(j, k, Coins[rho], risk)
+            assert abs(sum(d.values()) - 1.0) < 1e-9, f"mass != 1 at ({j},{k}), RR {rho}"
+            assert min(d.values()) >= 0, f"negative prob at ({j},{k}), RR {rho}: {d}"
+print(f"transition_pre check passed: {len(m_grid) * len(y_grid)} cells x {len(Coins)} RRs")
