@@ -30,8 +30,6 @@ Coins            = post.Coins
 risk             = post.risk
 R_ALL            = post.RETURN_ARRAYS
 collapse_to_coin = post.collapse_to_coin
-V_post           = post.V_star           # post-lock solved values, one per post-lock cell
-
 
 # ====================================================================================
 # Transition: route one trade's landing to breach / lock / a pre-lock cell
@@ -88,7 +86,7 @@ def transition_pre(j, k, coin, risk):
 # Handoff: post-lock value at any equity (interpolated between post-lock cells)
 # ====================================================================================
 
-def v_post(x):
+def v_post(x, V_post):
     """Post-lock value at equity x (dollars above the $25,000 start)."""
     if x >= post.Target:
         return 1.0                                        # at or past $27,100: payout
@@ -137,7 +135,7 @@ ny = len(y_grid)                         # 20 drawdown columns per peak row
 def cell_number(j, k):
     return j * ny + k
 
-def build_matrices(coins, risk, lock_one=False):
+def build_matrices(coins, risk, V_post, lock_one=False):
     """
     Build one transition matrix P and one lock-reward vector r per RR.
 
@@ -157,20 +155,20 @@ def build_matrices(coins, risk, lock_one=False):
                     if d == "breach":
                         continue
                     if d[0] == "lock":
-                        r[s] += prob * (1.0 if lock_one else v_post(d[1]))
+                        r[s] += prob * (1.0 if lock_one else v_post(d[1], V_post))
                     else:
                         P[s, cell_number(d[0], d[1])] += prob
         Ps.append(P)
         rs.append(r)
     return Ps, rs
 
-def solve_pre_fast(coins, risk=risk, lock_one=False, tol=1e-10, max_sweeps=100_000):
+def solve_pre_fast(coins, V_post, risk=risk, lock_one=False, tol=1e-10, max_sweeps=100_000):
     """
     Value iteration with a max over RR, using matrices.
     Each sweep computes Q = r + P @ V for every RR and every cell in one step each,
     then keeps the best RR per cell. Returns (V, policy) as 22 x 20 tables.
     """
-    Ps, rs = build_matrices(coins, risk, lock_one)
+    Ps, rs = build_matrices(coins, V_post=V_post, risk=risk, lock_one=lock_one)
     rhos = list(coins)
     V = np.zeros(n_states)
     for sweep in range(max_sweeps):
@@ -186,13 +184,13 @@ def solve_pre_fast(coins, risk=risk, lock_one=False, tol=1e-10, max_sweeps=100_0
     return V.reshape(len(m_grid), ny), policy
 
 
-def evaluate_policy_pre_fast(policy, coins, risk=risk, lock_one=False):
+def evaluate_policy_pre_fast(policy, coins, V_post, risk=risk, lock_one=False):
     """
     Exact value of following a fixed policy table, with no sweeps.
     With the RR fixed in every cell, the values satisfy V = r_pi + P_pi @ V,
     which is a linear system: (I - P_pi) V = r_pi.
     """
-    Ps, rs = build_matrices(coins, risk, lock_one)
+    Ps, rs = build_matrices(coins, V_post=V_post, risk=risk, lock_one=lock_one)
     rhos = list(coins)
     choice = [rhos.index(rho) for rho in policy.flatten()]           # RR index per cell
     P_pi = np.stack([Ps[a][s] for s, a in enumerate(choice)])        # each cell's row, for its RR
@@ -288,11 +286,12 @@ if RUN_CHECKS:
     print("transition_pre check passed: all cells, all RRs")
 
 # ---- 1. solve on all 884 trades -----------------------------------------------------
+V_post_full, _ = post.solve_post(Coins, risk)       # post-lock at the same risk, all 884 trades
 
 if RUN_MAIN:
     # ---- import time ----------------------------------------------------------------------
     t0 = time.time()                                    # NEW: start the clock
-    V_pre, policy_pre = solve_pre_fast(Coins)
+    V_pre, policy_pre = solve_pre_fast(Coins, V_post_full)
     print(f"solve_pre_fast took {time.time() - t0:.1f}s")    # NEW: stop the clock and print
     print(f"\nP(first payout | fresh funded account) = {V_pre[0, 0]:.4f}   best RR at start: {policy_pre[0, 0]}")
 
@@ -317,12 +316,12 @@ if RUN_MAIN:
             print(f"{int(m_grid[j]):>5}  " + " ".join(gaps))
 
     # ---- 2. optimal policy vs simple rules, all scored the same way ---------------------
-    V_opt = evaluate_policy_pre_fast(policy_pre, Coins)
+    V_opt = evaluate_policy_pre_fast(policy_pre, Coins, V_post_full)
 
     print("\nOptimal policy vs simple rules (all 884 trades):")
     show_row("optimal policy", V_opt, V_opt)
     for rho in [1.0, 1.5, 3.0, 5.0]:
-        show_row(f"always RR {rho}", evaluate_policy_pre_fast(fixed_policy(rho), Coins), V_opt)
+        show_row(f"always RR {rho}", evaluate_policy_pre_fast(fixed_policy(rho), Coins, V_post_full), V_opt)
 
     # ---- 3. are the edges stable over time? ----------------------------------------------
     half = len(R_ALL[1.0]) // 2
@@ -334,37 +333,40 @@ if RUN_MAIN:
     Coins_A = {rho: collapse_to_coin(R_ALL[rho][:half]) for rho in R_ALL}     # earlier trades
     Coins_B = {rho: collapse_to_coin(R_ALL[rho][half:]) for rho in R_ALL}     # later trades
 
-    V_A, policy_A = solve_pre_fast(Coins_A)                                         # built on A only
+    V_post_A, _ = post.solve_post(Coins_A, risk)    # post-lock from the first half only
+    V_post_B, _ = post.solve_post(Coins_B, risk)    # post-lock from the second half only
+
+    V_A, policy_A = solve_pre_fast(Coins_A, V_post_A)                                         # built on A only
 
     print("\nOut-of-sample test (policy built on the FIRST half):")
     show_row("built policy, scored on A", V_A)                                 # in-sample
-    show_row("built policy, scored on B", evaluate_policy_pre_fast(policy_A, Coins_B))   # out-of-sample
+    show_row("built policy, scored on B", evaluate_policy_pre_fast(policy_A, Coins_B, V_post_B))   # out-of-sample
     for rho in [1.0, 5.0]:
-        show_row(f"always RR {rho}, scored on B", evaluate_policy_pre_fast(fixed_policy(rho), Coins_B))
+        show_row(f"always RR {rho}, scored on B", evaluate_policy_pre_fast(fixed_policy(rho), Coins_B, V_post_B))
 
     # ---- 5. swap: build on the SECOND half, score on the first ---------------------------
-    V_B, policy_B = solve_pre_fast(Coins_B)                                         # built on B only
+    V_B, policy_B = solve_pre_fast(Coins_B, V_post_B)                                         # built on B only
 
     print("\nSwap test (policy built on the SECOND half):")
     show_row("built policy, scored on B", V_B)                                 # in-sample
-    show_row("built policy, scored on A", evaluate_policy_pre_fast(policy_B, Coins_A))   # out-of-sample
+    show_row("built policy, scored on A", evaluate_policy_pre_fast(policy_B, Coins_A, V_post_A))   # out-of-sample
     for rho in [1.0, 5.0]:
-        show_row(f"always RR {rho}, scored on A", evaluate_policy_pre_fast(fixed_policy(rho), Coins_A))
+        show_row(f"always RR {rho}, scored on A", evaluate_policy_pre_fast(fixed_policy(rho), Coins_A, V_post_A))
 
     # ---- 6. fair-coin benchmark: P(lock) must equal (20/21)^22 --------------------------
     fair = {1.0: [(0.5, 1.0), (0.5, -1.0)]}
-    V_fair, _ = solve_pre_fast(fair, risk=50, lock_one=True, tol=1e-9)
+    V_fair, _ = solve_pre_fast(fair, V_post_full, risk=50, lock_one=True, tol=1e-9)
     exact = (20 / 21) ** 22
     print(f"\nfair-coin P(lock): solver {V_fair[0, 0]:.6f}   exact {exact:.6f}")
 
     # ---- 7. P(lock) under the payout-optimal policy --------------------------------------
-    V_lock = evaluate_policy_pre_fast(policy_pre, Coins, lock_one=True)    # follow the SAME policy,
+    V_lock = evaluate_policy_pre_fast(policy_pre, Coins, V_post_full, lock_one=True)    # follow the SAME policy,
                                                                             # but count any lock as 1
     p_lock = V_lock[0, 0]
     print(f"\nP(lock)                  = {p_lock:.4f}")
     print(f"P(first payout)          = {V_pre[0, 0]:.4f}")
-    print(f"P(payout | locked)       = {V_pre[0, 0] / p_lock:.4f}   "
-            f"(compare: post-lock at the lock entry = {post.V_star[post.cell_index(post.Entry, post.Floor, post.Dx)]:.4f})")
+    print(f"P(payout | locked)       = {V_pre[0, 0] / p_lock:.4f}")
+    print(f"(compare: post-lock at the lock entry = {V_post_full[post.cell_index(post.Entry, post.Floor, post.Dx)]:.4f})")
 
 # By using evaluate_policy_pre_fast and solve_pre_fast, the program stopped redoing work whose answer never changes: where each trade outcome lands depends only on the trades and the risk, 
 # not on the current value estiamtes, so working it out and reusing it (caching) removes the same routing from every one of 167 sweeps. Second, the arithmetic is hadned over in bulk as plain Python does

@@ -36,7 +36,7 @@ for rho in sorted(Coins):
 def cell_index(x_prime, Floor, Dx):
     return floor((x_prime - Floor) / Dx - 1)
 
-def add_to_grid(x_prime, prob, dest, Floor=Floor, Target=Target, Dx=Dx):
+def add_to_grid(x_prime, prob, dest, Floor, Target, Dx):
     """Add a transition probability to the appropriate grid states."""
     if x_prime <= Floor:
         dest["floor"] = dest.get("floor", 0.0) + prob
@@ -116,6 +116,12 @@ def solve(COINS, V_init, Floor, Target, Dx, risk, tol=1e-10, max_sweeps=10000):
 
 #====================================================================================
 
+def solve_post(coins, risk):
+    V_init = np.zeros(len(grid))
+    return solve(coins, V_init, Floor, Target, Dx, risk)
+
+#====================================================================================
+
 V_init = np.zeros(len(grid))     # initial guess: all zeros
 
 V_star, policy = solve(Coins, V_init, Floor, Target, Dx, risk)
@@ -144,3 +150,9 @@ print(f"P(reach $27,100 before $25,100 | locked at $26,100) = "
       f"{V_star[i_entry]:.4f}  best RR {policy[i_entry]}")
 
 assert all(p >= 0 for p in d.values()), f"negative probability: {d}"
+
+V_250, _ = solve_post(Coins, 250)
+V_150, _ = solve_post(Coins, 150)
+i = cell_index(Entry, Floor, Dx)
+print(f"\nsolve_post at $250: {V_250[i]:.4f}   (must match 0.6401)")
+print(f"solve_post at $150: {V_150[i]:.4f}   (new: post-lock at 3 MNQ)")
