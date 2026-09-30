@@ -125,11 +125,19 @@ if RUN_MAIN:
 
 
 # ---- stage 11: risk sweep ---------------------------------------------------------------
-RISKS = [100, 150, 200, 250, 300, 350, 400, 450, 500]       # $ per R = 2 to 10 MNQ
+import Lifecycle as life
+
+RISKS = list(range(100, 1001, 50))       # $ per R = 2 to 10 MNQ
 i_entry = post.cell_index(post.Entry, post.Floor, post.Dx)
 
+eval_cost, eval_days = life.eval_stage(life.Eval_fee, life.Eval_pass_rate, life.Days_pass, life.Days_fail)
+
+print(f"\neval side, per funded account: ${eval_cost:.0f} over {eval_days:.1f} days")
+
 print(f"\n{'risk':>6} {'MNQ':>4} {'P(lock)':>8} {'P(pay1)':>8} {'P(again)':>9} "
-      f"{'trades1':>8} {'trades/cycle':>13}")
+      f"{'trades1':>8} {'trades/cyc':>11} {'payouts':>8} {'cash':>7} {'days':>7}"
+      f" {'$/day':>7} {'fleet':>7} {'ROI':>7}")
+
 for r in RISKS:
     V_post_r, pol_post_r = post.solve_post(Coins, r)                        # post-lock at this risk
     T_post_r = post.expected_trades_post(Coins, pol_post_r, r)
@@ -138,5 +146,12 @@ for r in RISKS:
     p_lock = evaluate_policy_pre_fast(pol_pre_r, Coins, V_post_r, risk=r, lock_one=True)[0, 0]
     T_first = expected_trades_pre(pol_pre_r, Coins, T_post_r, risk=r)[0, 0]
 
+    payouts, cash, fdays = life.funded_stage(q=V_pre_r[0,0], p=V_post_r[i_entry],
+        trades_first=T_first, trades_cycle=T_post_r[i_entry],
+        payout=life.Payout, split=life.Split, trades_per_day=life.Trades_per_day)
+
+    net, cdays, per_day, fleet, roi = life.cycle_economics(eval_cost, eval_days, cash, fdays, life.N_slots)
+
     print(f"{r:>6} {r // 50:>4} {p_lock:>8.3f} {V_pre_r[0, 0]:>8.3f} {V_post_r[i_entry]:>9.3f} "
-          f"{T_first:>8.1f} {T_post_r[i_entry]:>13.1f}")
+          f"{T_first:>8.1f} {T_post_r[i_entry]:>11.1f} {payouts:>8.2f} {cash:>7.0f} {fdays:>7.1f}"
+          f" {per_day:>7.1f} {fleet:>7.0f} {roi:>7.0%}")
