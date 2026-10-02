@@ -7,13 +7,12 @@ the account then hands off to the post-lock model (Postlock.py).
 """
 from math import floor
 import numpy as np
-import Postlock as post          # post-lock model: its solved values, coins, and helpers
+import Postlock as post        
 
 
-VERBOSE     = False    # print every landing inside add_to_grid_pre (small tests only)
+VERBOSE     = False    
 
 
-# ---- rules and grid ----------------------------------------------------------------
 DD_limit  = 1000       # trailing drawdown that breaches ($)
 Lock_peak = 1100       # peak (above start) that locks the floor at $25,100
 Dx        = 50         # grid step ($)
@@ -21,7 +20,6 @@ Dx        = 50         # grid step ($)
 m_grid = np.arange(0, Lock_peak, Dx)     # peaks:     0 ... 1050   (22 rows)
 y_grid = np.arange(0, DD_limit, Dx)      # drawdowns: 0 ... 950    (20 columns)
 
-# ---- data, shared with post-lock so both stages use the same trades ----------------
 Coins            = post.Coins
 risk             = post.risk
 R_ALL            = post.RETURN_ARRAYS
