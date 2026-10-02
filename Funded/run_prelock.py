@@ -130,7 +130,8 @@ import Lifecycle as life
 RISKS = list(range(100, 1001, 50))       # $ per R = 2 to 10 MNQ
 i_entry = post.cell_index(post.Entry, post.Floor, post.Dx)
 
-eval_cost, eval_days = life.eval_stage(life.Eval_fee, life.Eval_pass_rate, life.Days_pass, life.Days_fail)
+eval_cost, eval_days = life.eval_stage(life.Eval_fee, life.Eval_pass_rate, life.Days_pass, life.Days_fail,
+                                       activation=life.Activation_fee)
 
 print(f"\neval side, per funded account: ${eval_cost:.0f} over {eval_days:.1f} days")
 
@@ -148,7 +149,8 @@ for r in RISKS:
 
     payouts, cash, fdays = life.funded_stage(q=V_pre_r[0,0], p=V_post_r[i_entry],
         trades_first=T_first, trades_cycle=T_post_r[i_entry],
-        payout=life.Payout, split=life.Split, trades_per_day=life.Trades_per_day)
+        payout=life.Payout, split=life.Split, trades_per_day=life.Trades_per_day,
+        max_payouts=life.Max_payouts)
 
     net, cdays, per_day, fleet, roi = life.cycle_economics(eval_cost, eval_days, cash, fdays, life.N_slots)
 

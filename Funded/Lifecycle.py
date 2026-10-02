@@ -1,18 +1,23 @@
 # ==========================================================================================
 # Eval Lifecycle Calc
 # ==========================================================================================
+from Config import PLAN
 
-Eval_fee = 60
+Eval_fee = PLAN.eval_fee
+Activation_fee = PLAN.activation_fee
+Payout = PLAN.payout 
+Split = PLAN.split
+Max_payouts = PLAN.max_payouts 
 Eval_pass_rate = 0.35
 Days_pass = 4
 Days_fail = 2
 
-def eval_stage(fee, pass_rate, days_pass, days_fail):
+def eval_stage(fee, pass_rate, days_pass, days_fail, activation=Activation_fee):
     "Expected cost and days to get ONE funded account"
     attempts = 1 / pass_rate
     fails = attempts - 1
     days = fails * days_fail + days_pass
-    cost = attempts * fee
+    cost = attempts * fee + activation
 
     return cost, days 
 
@@ -28,11 +33,18 @@ Payout = 1000
 Split = 0.9
 Trades_per_day = 1
 
-def funded_stage(q, p, trades_first, trades_cycle, payout, split, trades_per_day):
-    payouts = q / (1 - p)
-    cash = payouts * split * payout
-    trades = trades_first + payouts * trades_cycle
-    days = trades / trades_per_day
+def funded_stage(q, p, trades_first, trades_cycle, payout, split, trades_per_day, max_payouts=None):
+    """Expected payouts, cash, and days for one funded account.
+    max_payouts=None: no limit. Otherwise the account leaves after that many payouts."""
+    if max_payouts is None:
+        payouts = q / (1 - p)                                    # unlimited geometric series
+        cycles  = payouts                                        # every payout starts a new cycle
+    else:
+        payouts = q * (1 - p ** max_payouts) / (1 - p)           # series stops after max_payouts terms
+        cycles  = q * (1 - p ** (max_payouts - 1)) / (1 - p)     # no new cycle after the last payout
+    cash   = payouts * split * payout
+    trades = trades_first + cycles * trades_cycle
+    days   = trades / trades_per_day
     return payouts, cash, days
 
 

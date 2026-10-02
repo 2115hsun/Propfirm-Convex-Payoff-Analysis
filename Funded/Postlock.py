@@ -1,12 +1,13 @@
 from math import floor
+from Config import PLAN
 
 import numpy as np
 import pickle
 
-Floor = 100
-Target = 2100
-Entry = 1100
-Dx = 50
+Floor  = PLAN.locked_floor      # frozen floor after the lock
+Target = PLAN.payout_target     # payout level
+Entry  = PLAN.lock_peak         # balance when the account locks
+Dx     = PLAN.dx
 
 grid = np.arange(Floor+Dx, Target, Dx)  # [50, 100, ..., 1950]
 
@@ -100,9 +101,9 @@ def solve(COINS, V_init, Floor, Target, Dx, risk, tol=1e-10, max_sweeps=10000):
             # try every RR, keep the best (max value AND argmax RR)
             q_by_rr = [(bellman_backup(i, COINS[rho], V, Floor, Target, Dx, risk), rho)
                        for rho in COINS]
-            best_q, best_rho = max(q_by_rr, key=lambda x: x[0])  # <-- FILL IN: pick the largest
-            newV[i]   = best_q                  # <-- FILL IN: optimal value at cell i
-            policy[i] = best_rho                  # <-- FILL IN: the RR that achieved it
+            best_q, best_rho = max(q_by_rr, key=lambda x: x[0])  
+            newV[i]   = best_q                  
+            policy[i] = best_rho                  
             delta = max(delta, abs(newV[i] - V[i]))
         V = newV
         if delta < tol:

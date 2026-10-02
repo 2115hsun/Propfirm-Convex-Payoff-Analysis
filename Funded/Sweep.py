@@ -10,7 +10,8 @@ def run_sweep(risks, coins=None):
     coins = coins or post.Coins
     i_entry = post.cell_index(post.Entry, post.Floor, post.Dx)
     eval_cost, eval_days = life.eval_stage(life.Eval_fee, life.Eval_pass_rate,
-                                           life.Days_pass, life.Days_fail)
+                                           life.Days_pass, life.Days_fail,
+                                           activation=life.Activation_fee)
     rows = []
     for r in risks:
         V_post_r, pol_post_r = post.solve_post(coins, r)
