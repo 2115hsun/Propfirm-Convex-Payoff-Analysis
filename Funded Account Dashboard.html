@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Funded Account Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #EEF1F4; --panel: #F8FAFB; --ink: #1B2430; --muted: #5B6675; --rule: #CCD3DB;
+    --breach: #B8423A; --lock: #B07A15; --pay: #2E7A58; --line: #2C4A6E; --soft: #E3E8EE;
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --cond: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", sans-serif;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151A21; --panel: #1C232C; --ink: #E6EAF0; --muted: #9AA5B3; --rule: #2E3945;
+      --breach: #E07068; --lock: #E0A94A; --pay: #5BBF8E; --line: #8FB3E0; --soft: #232C37;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151A21; --panel: #1C232C; --ink: #E6EAF0; --muted: #9AA5B3; --rule: #2E3945;
+    --breach: #E07068; --lock: #E0A94A; --pay: #5BBF8E; --line: #8FB3E0; --soft: #232C37;
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 22px 20px 48px; }
+  header.top { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: end; justify-content: space-between;
+               border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+  h1 { font: 600 27px/1.15 var(--cond); margin: 0; }
+  .sub { color: var(--muted); margin: 4px 0 0; max-width: 60ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+  label.ctl { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  select, input[type=number], input[type=text] { font: 500 15px var(--sans); color: var(--ink); background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; min-width: 6.5rem; }
+  input.narrow { min-width: 0; width: 7.5rem; }
+  .stepper { display: flex; align-items: center; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); }
+  .stepper button { font: 600 16px var(--sans); background: none; border: 0; color: var(--ink); width: 32px; height: 34px; cursor: pointer; }
+  .stepper output { min-width: 2.2rem; text-align: center; font: 600 16px var(--cond); }
+  .btn { font: 500 14px var(--sans); color: var(--ink); background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 4px; padding: 7px 12px; cursor: pointer; }
+  .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+  .status { font-size: 13px; color: var(--muted); min-height: 1.2em; margin-top: 8px; }
+  .status.err { color: var(--breach); }
+  .grid { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 28px; margin-top: 20px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  aside.ladder { position: sticky; top: calc(16px + env(safe-area-inset-top, 0px)); align-self: start; }
+  h2 { font: 600 17px/1.3 var(--cond); margin: 0 0 8px; }
+  .ladder svg { width: 100%; height: auto; display: block; }
+  .ladder p { font-size: 14px; color: var(--muted); margin: 10px 0 0; }
+  nav.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--rule); overflow-x: auto; }
+  nav.tabs button { font: 500 15px var(--sans); color: var(--muted); background: none; border: 0;
+    border-bottom: 3px solid transparent; padding: 8px 14px; cursor: pointer; white-space: nowrap; }
+  nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .panel { padding-top: 18px; }
+  .panel[hidden] { display: none; }
+  dl.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin: 0 0 20px; border-top: 1px solid var(--rule); }
+  dl.kpis div { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--rule); }
+  dl.kpis dt { font-size: 13px; color: var(--muted); }
+  dl.kpis dd { margin: 2px 0 0; font: 600 22px/1.2 var(--cond); }
+  dl.kpis dd.good { color: var(--pay); } dl.kpis dd.bad { color: var(--breach); }
+  .fig { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 14px 10px; margin-bottom: 18px; }
+  .fig svg { width: 100%; height: auto; display: block; }
+  .fighead { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .fighead h2 { margin: 0; }
+  .cap { font-size: 13px; color: var(--muted); margin: 6px 0 0; max-width: 74ch; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; font: 14px/1.35 var(--cond); font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; background: var(--panel); }
+  td.l, th.l { text-align: left; }
+  table.pick tbody tr { cursor: pointer; }
+  table.pick tbody tr:hover { background: var(--soft); }
+  tbody tr.sel { background: var(--soft); box-shadow: inset 3px 0 0 var(--line); }
+  tbody tr.prov td { color: var(--muted); }
+  table.accts input, table.accts select { font-size: 14px; padding: 4px 6px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font: 500 13px var(--sans); }
+  .tag.pre { background: color-mix(in srgb, var(--lock) 18%, transparent); color: var(--lock); }
+  .tag.post { background: color-mix(in srgb, var(--line) 18%, transparent); color: var(--line); }
+  .tag.pay { background: color-mix(in srgb, var(--pay) 20%, transparent); color: var(--pay); }
+  .tag.dead { background: color-mix(in srgb, var(--breach) 18%, transparent); color: var(--breach); }
+  .rr { font: 600 18px var(--cond); }
+  .note { font-size: 14px; color: var(--muted); max-width: 74ch; }
+  .note b { color: var(--ink); font-weight: 600; }
+  .form { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .empty { border: 1px dashed var(--rule); border-radius: 6px; padding: 20px; color: var(--muted); max-width: 72ch; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 6px 0 14px; }
+  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font: 13px/1.4 var(--sans);
+    padding: 6px 9px; border-radius: 4px; max-width: 260px; opacity: 0; z-index: 10; }
+  @media (prefers-reduced-motion: no-preference) { #tip { transition: opacity .1s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Funded Account Dashboard</h1>
+      <p class="sub">Optimal reward-to-risk targets, payout odds and account economics from a dynamic-programming model of prop-firm funded accounts.</p>
+    </div>
+    <div class="controls">
+      <label class="ctl">Firm and plan <select id="plan"><option value="lucid25flex">Lucid 25K Flex</option></select></label>
+      <label class="ctl">Risk per trade <select id="risk"></select></label>
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)">Fleet size
+        <div class="stepper"><button type="button" id="slotsDown" aria-label="Fewer slots">−</button>
+          <output id="slotsOut" aria-live="polite"></output>
+          <button type="button" id="slotsUp" aria-label="More slots">+</button></div>
+      </div>
+      <label class="btn" for="file">Load results file<input id="file" type="file" accept=".json,application/json" hidden></label>
+    </div>
+  </header>
+  <div id="status" class="status" role="status"></div>
+
+  <div class="grid">
+    <aside class="ladder">
+      <h2>Account levels at this risk</h2>
+      <svg id="ladder" viewBox="0 0 290 430" role="img" aria-label="Account balance levels, trade step size and your accounts"></svg>
+      <p id="ladderText"></p>
+    </aside>
+
+    <main>
+      <nav class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
+        <button role="tab" aria-selected="false" data-tab="accounts">My accounts</button>
+        <button role="tab" aria-selected="false" data-tab="roi">ROI</button>
+        <button role="tab" aria-selected="false" data-tab="model">Model</button>
+        <button role="tab" aria-selected="false" data-tab="inputs">Inputs</button>
+      </nav>
+
+      <section class="panel" id="tab-overview" role="tabpanel">
+        <dl class="kpis" id="kpis"></dl>
+        <div class="fig">
+          <div class="fighead"><h2 id="metricTitle"></h2>
+            <label class="ctl" style="flex-direction:row;align-items:center;gap:8px">Show
+              <select id="metric">
+                <option value="month">Fleet $ per month</option>
+                <option value="roi">ROI on eval fees</option>
+                <option value="costPerPayout">Eval cost per payout</option>
+                <option value="p_pay1">P(first payout)</option>
+                <option value="payouts">Payouts per funded account</option>
+                <option value="days">Days per cycle</option>
+              </select></label></div>
+          <svg id="metricChart" viewBox="0 0 640 250" role="img" aria-label="Selected metric by risk per trade"></svg>
+          <p class="cap">Shaded region: accounts last only two or three trades there, results depend on grid alignment, and MAE is not modeled yet. Read as provisional.</p>
+        </div>
+        <div class="two">
+          <div class="fig"><h2>Payouts from one funded account</h2>
+            <svg id="distChart" viewBox="0 0 440 230" role="img" aria-label="Payout distribution"></svg>
+            <p class="cap" id="distCap"></p></div>
+          <div class="fig"><h2>How the probabilities fit together</h2>
+            <p class="note" id="chain" style="margin:4px 0 0"></p></div>
+        </div>
+        <h2>All risk levels</h2>
+        <div class="tablewrap"><table id="sweep" class="pick"><thead></thead><tbody></tbody></table></div>
+        <p class="note" style="margin-top:12px"><b>Before commission and MAE.</b> Both lower these numbers, and MAE lowers large positions most. The Flex requirement of five profitable days per payout cycle is not modeled.</p>
+      </section>
+
+      <section class="panel" id="tab-accounts" role="tabpanel" hidden>
+        <h2>My accounts</h2>
+        <p class="note" style="margin-top:0">Enter each funded account's balance and its highest end-of-day balance so far. The table finds
+          its stage and floor, then looks up the best reward-to-risk target for that state at the risk selected above.</p>
+        <div id="acctBody"></div>
+        <div class="row"><button class="btn primary" id="addAcct" type="button">Add account</button><span class="note" id="acctSaved"></span></div>
+      </section>
+
+      <section class="panel" id="tab-roi" role="tabpanel" hidden>
+        <h2>What a purchase of evaluations returns</h2>
+        <div class="row">
+          <label class="ctl">Evaluations bought<input type="number" id="nEvals" class="narrow" min="1" max="1000" step="1" value="20"></label>
+          <label class="ctl">Simulations<select id="nSims"><option>2000</option><option selected>5000</option><option>20000</option></select></label>
+          <button class="btn" id="rerun" type="button">Run again</button>
+        </div>
+        <dl class="kpis" id="roiKpis"></dl>
+        <div class="two">
+          <div class="fig"><h2>Range of outcomes</h2>
+            <svg id="mcChart" viewBox="0 0 440 240" role="img" aria-label="Distribution of net profit"></svg>
+            <p class="cap" id="mcCap"></p></div>
+          <div class="fig"><h2>ROI by risk per trade</h2>
+            <svg id="roiChart" viewBox="0 0 440 240" role="img" aria-label="ROI by risk"></svg>
+            <p class="cap">Expected return on eval spending at each risk.</p></div>
+        </div>
+        <p class="note">Each evaluation passes with the pass rate from the Inputs tab. A funded account reaches a first payout with
+          P(first payout) and each later one with P(next payout). Net is payouts after the split minus eval fees.</p>
+      </section>
+
+      <section class="panel" id="tab-model" role="tabpanel" hidden><div id="preBody"></div><div id="postBody"></div></section>
+
+      <section class="panel" id="tab-inputs" role="tabpanel" hidden>
+        <h2>Evaluation</h2>
+        <div class="form">
+          <label class="ctl">Eval fee ($)<input type="number" id="fee" step="1" min="0"></label>
+          <label class="ctl">Pass rate (%)<input type="number" id="pass" step="1" min="1" max="100"></label>
+          <label class="ctl">Days, passing attempt<input type="number" id="dpass" step="0.5" min="0"></label>
+          <label class="ctl">Days, failed attempt<input type="number" id="dfail" step="0.5" min="0"></label>
+        </div>
+        <h2>Funded account and fleet</h2>
+        <div class="form">
+          <label class="ctl">Payout per request ($)<input type="number" id="payout" step="50" min="0"></label>
+          <label class="ctl">Your share (%)<input type="number" id="split" step="1" min="0" max="100"></label>
+          <label class="ctl">Max trades per account per day<input type="number" id="tpd" step="0.1" min="0.1"></label>
+          <label class="ctl">Signals per day (strategy)<input type="number" id="spd" step="0.1" min="0.1"></label>
+        </div>
+        <dl class="kpis" id="evalKpis"></dl>
+        <p class="note">Signals are shared by rotation: each signal goes to one account. With more slots than daily signals,
+          each account trades less often, so accounts take longer and fleet income stops growing.</p>
+      </section>
+    </main>
+  </div>
+</div>
+<div id="tip" role="tooltip"></div>
+
+<script>
+const PLANS = { lucid25flex: { name: "Lucid 25K Flex", start: 25000, dd: 1000, lockPeak: 26100, lockedFloor: 25100, payoutAt: 27100, dx: 50 } };
+const BUILTIN = {
+  meta: { stop_points: 25, trades: 884, window: "2026" },
+  eval: { fee: 60, pass_rate: 0.35, days_pass: 4, days_fail: 2 },
+  funded: { payout: 1000, split: 0.90, slots: 5, trades_per_day: 1, signals_per_day: 5 },
+  rows: [
+    [100,.585,.479,.764,117.4,92.5],[150,.532,.417,.700,52.1,44.2],[200,.510,.386,.667,28.3,25.3],
+    [250,.522,.373,.640,18.8,17.9],[300,.538,.410,.638,14.9,12.3],[350,.480,.380,.607,8.9,8.2],
+    [400,.465,.403,.615,7.8,6.7],[450,.442,.426,.640,6.1,6.3],[500,.366,.351,.569,3.4,4.3],
+    [550,.388,.376,.565,3.2,3.9],[600,.409,.400,.572,3.0,3.5],[650,.410,.401,.570,3.0,2.6],
+    [700,.440,.433,.610,2.9,2.3],[750,.441,.434,.610,2.9,2.3],[800,.442,.435,.655,2.9,2.1],
+    [850,.478,.475,.655,2.7,2.1],[900,.478,.475,.655,2.7,2.1],[950,.478,.475,.655,2.7,2.1],
+    [1000,.473,.332,.528,1.9,1.0]
+  ].map(([risk,p_lock,p_pay1,p_again,trades_first,trades_cycle]) => ({risk,p_lock,p_pay1,p_again,trades_first,trades_cycle})),
+  grids: {}
+};
+const PROVISIONAL_FROM = 700, DAYS_PER_MONTH = 21;
+const store = {
+  get(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
+};
+let DATA = structuredClone(BUILTIN);
+let sel = 250, metric = "month";
+let accounts = store.get("fad-accounts-v1") || [{ name: "Account 1", plan: "lucid25flex", balance: 25000, peak: 25000 }];
+const $ = id => document.getElementById(id);
+const plan = () => PLANS[$("plan").value];
+const money = (v, d = 0) => (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+const pct = (v, d = 1) => (100 * v).toFixed(d) + "%";
+const row = r => DATA.rows.find(d => d.risk === r);
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* economics: same formulas as Lifecycle.py */
+function evalStage() { const e = DATA.eval, a = 1 / e.pass_rate; return { attempts: a, cost: a * e.fee, days: (a - 1) * e.days_fail + e.days_pass }; }
+function effectiveTradesPerDay() { const f = DATA.funded; return Math.min(f.trades_per_day, f.signals_per_day / f.slots); }
+function econ(r) {
+  const e = evalStage(), f = DATA.funded, tpd = effectiveTradesPerDay();
+  const payouts = r.p_pay1 / (1 - r.p_again), cash = payouts * f.payout * f.split;
+  const fdays = (r.trades_first + payouts * r.trades_cycle) / tpd, net = cash - e.cost, days = e.days + fdays;
+  const fleetDay = net / days * f.slots;
+  return { payouts, cash, fdays, net, days, fleetDay, month: fleetDay * DAYS_PER_MONTH, roi: net / e.cost,
+           costPerPayout: e.cost / payouts, p_pay1: r.p_pay1 };
+}
+function payoutDist(q, p) { const o = [1 - q]; for (let k = 1; k < 4; k++) o.push(q * Math.pow(p, k - 1) * (1 - p)); o.push(q * Math.pow(p, 3)); return o; }
+
+/* svg and tooltip helpers */
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent, text) { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (text != null) n.textContent = text; if (parent) parent.appendChild(n); return n; }
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const tip = $("tip");
+function hover(node, html, onClick) {
+  node.addEventListener("pointermove", e => { tip.innerHTML = html; tip.style.opacity = 1;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - 270) + "px"; tip.style.top = (e.clientY + 14) + "px"; });
+  node.addEventListener("pointerleave", () => tip.style.opacity = 0);
+  if (onClick) { node.style.cursor = "pointer"; node.addEventListener("click", onClick); }
+}
+function niceTicks(lo, hi, n = 4) {
+  const span = hi - lo || 1, step = Math.pow(10, Math.floor(Math.log10(span / n)));
+  const s = [1, 2, 2.5, 5, 10].map(m => m * step).find(m => span / m <= n) || step * 10;
+  const vals = []; for (let v = Math.floor(lo / s) * s; v <= hi + 1e-9; v += s) vals.push(+v.toFixed(10)); return vals;
+}
+
+/* live-account policy lookup */
+function accountState(a) {
+  const P = PLANS[a.plan], risk = sel, bal = +a.balance, peak = Math.max(+a.peak, bal, P.start);
+  const locked = peak >= P.lockPeak, floor = locked ? P.lockedFloor : peak - P.dd;
+  const out = { floor, room: bal - floor, locked };
+  if (bal <= floor) return { ...out, stage: "dead", label: "Breached" };
+  if (locked && bal >= P.payoutAt) return { ...out, stage: "pay", label: "Payout ready" };
+  const g = DATA.grids[risk];
+  if (locked) {
+    out.stage = "post"; out.label = "Post-lock";
+    if (g && g.post) { const i = Math.max(0, Math.min(g.post.x.length - 1, Math.round((bal - P.start - g.post.x[0]) / P.dx)));
+      out.rr = +g.post.policy[i]; out.v = g.post.V[i]; }
+  } else {
+    out.stage = "pre"; out.label = "Pre-lock";
+    if (g && g.pre) { const j = Math.max(0, Math.min(g.pre.m.length - 1, Math.round((peak - P.start) / P.dx)));
+      const k = Math.max(0, Math.min(g.pre.y.length - 1, Math.round((peak - bal) / P.dx)));
+      out.rr = +g.pre.policy[j][k]; out.v = g.pre.V[j][k]; }
+  }
+  return out;
+}
+
+/* ladder */
+function drawLadder() {
+  const svg = $("ladder"); svg.innerHTML = "";
+  const P = plan(), lo = P.start - 1150, hi = P.payoutAt + 150, top = 16, bot = 410;
+  const y = v => bot - (v - lo) / (hi - lo) * (bot - top);
+  const levels = [[P.payoutAt, "payout", css("--pay"), false], [P.lockPeak, "lock peak", css("--lock"), true],
+    [P.lockedFloor, "floor after lock", css("--lock"), false], [P.start, "start", css("--muted"), true], [P.start - P.dd, "starting floor", css("--breach"), false]];
+  el("line", { x1: 60, x2: 60, y1: y(hi), y2: y(lo), stroke: css("--rule"), "stroke-width": 2 }, svg);
+  for (const [v, label, col, dash] of levels) {
+    el("line", { x1: 50, x2: 150, y1: y(v), y2: y(v), stroke: col, "stroke-width": 2, "stroke-dasharray": dash ? "5 4" : "none" }, svg);
+    el("text", { x: 156, y: y(v) - 2, fill: col, "font-size": 11.5 }, svg, label);
+    el("text", { x: 156, y: y(v) + 11, fill: css("--muted"), "font-size": 11 }, svg, money(v));
+  }
+  const r = sel, win = 1.5 * r;
+  hover(el("rect", { x: 70, y: y(P.start), width: 18, height: y(P.start - r) - y(P.start), fill: css("--breach"), opacity: .7 }, svg), `One full loss: −${money(r)}`);
+  hover(el("rect", { x: 94, y: y(P.start + win), width: 18, height: y(P.start) - y(P.start + win), fill: css("--pay"), opacity: .7 }, svg), `One 1.5R win: +${money(win)}`);
+  accounts.forEach((a, i) => {
+    const st = accountState(a), cy = y(Math.max(lo, Math.min(hi, +a.balance)));
+    const col = { pre: css("--lock"), post: css("--line"), pay: css("--pay"), dead: css("--breach") }[st.stage];
+    hover(el("circle", { cx: 128 + (i % 3) * 8, cy, r: 5, fill: col, stroke: css("--panel"), "stroke-width": 1.5 }, svg),
+      `<b>${escapeHtml(a.name)}</b><br>${money(+a.balance)}, ${st.label}<br>floor ${money(st.floor)}` + (st.rr ? `<br>best RR ${st.rr}` : ""));
+  });
+  $("ladderText").textContent = `At ${money(r)} per trade (${r / 50} MNQ at a 25-point stop) a fresh account can take ${(P.dd / r).toFixed(1)} full losses before its floor. Dots mark your accounts.`;
+}
+
+/* overview */
+function drawKpis() {
+  const r = row(sel), m = econ(r), f = DATA.funded;
+  const items = [["P(lock)", pct(r.p_lock)], ["P(first payout)", pct(r.p_pay1)], ["P(next payout)", pct(r.p_again)],
+    ["Payouts per funded account", m.payouts.toFixed(2)], ["Eval cost per payout", money(m.costPerPayout)], ["Days per account cycle", m.days.toFixed(1)],
+    [`Fleet $ per month (${f.slots} slots)`, money(m.month), m.month >= 0 ? "good" : "bad"], ["ROI on eval fees", pct(m.roi, 0), m.roi >= 0 ? "good" : "bad"]];
+  $("kpis").innerHTML = items.map(([k, v, c]) => `<div><dt>${k}</dt><dd class="${c || ""}">${v}</dd></div>`).join("");
+  const perEval = DATA.eval.pass_rate * r.p_pay1;
+  $("chain").innerHTML = `Out of 100 evaluations, about <b>${(100 * DATA.eval.pass_rate).toFixed(0)}</b> pass. A funded account locks ${pct(r.p_lock, 0)} of the time ` +
+    `and reaches a first payout ${pct(r.p_pay1, 0)} of the time, so about <b>${(100 * perEval).toFixed(0)}</b> of the 100 evaluations lead to a payout. ` +
+    `After each payout the account starts again at the lock level with a ${pct(r.p_again, 0)} chance of the next one, so a paying account averages ` +
+    `<b>${(1 / (1 - r.p_again)).toFixed(1)}</b> payouts. P(first payout) assumes the eval is already passed.`;
+}
+const METRICS = { month: ["Fleet $ per month", v => money(v)], roi: ["ROI on eval fees", v => pct(v, 0)], costPerPayout: ["Eval cost per payout", v => money(v)],
+  p_pay1: ["P(first payout)", v => pct(v, 0)], payouts: ["Payouts per funded account", v => v.toFixed(2)], days: ["Days per account cycle", v => v.toFixed(0)] };
+function lineChart(svg, W, H, getY, fmtY) {
+  svg.innerHTML = "";
+  const L = 58, R = 14, T = 12, B = 34, rows = DATA.rows, xs = rows.map(d => d.risk), ys = rows.map(getY);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), yt = niceTicks(Math.min(0, ...ys), Math.max(...ys) * 1.05), y0 = yt[0], y1 = yt[yt.length - 1];
+  const X = v => L + (v - x0) / (x1 - x0) * (W - L - R), Y = v => H - B - (v - y0) / (y1 - y0 || 1) * (H - T - B);
+  if (x1 >= PROVISIONAL_FROM) el("rect", { x: X(PROVISIONAL_FROM) - 8, y: T, width: X(x1) - X(PROVISIONAL_FROM) + 22, height: H - T - B, fill: css("--soft") }, svg);
+  for (const v of yt) { el("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: css("--rule") }, svg);
+    el("text", { x: L - 6, y: Y(v) + 4, "text-anchor": "end", "font-size": 11, fill: css("--muted") }, svg, fmtY(v)); }
+  xs.filter((_, i) => i % 2 === 0).forEach(v => el("text", { x: X(v), y: H - B + 16, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg, "$" + v));
+  el("text", { x: (L + W - R) / 2, y: H - 3, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg, "risk per trade");
+  el("polyline", { points: rows.map((d, i) => `${X(d.risk)},${Y(ys[i])}`).join(" "), fill: "none", stroke: css("--line"), "stroke-width": 2 }, svg);
+  rows.forEach((d, i) => {
+    const c = el("circle", { cx: X(d.risk), cy: Y(ys[i]), r: d.risk === sel ? 6.5 : 4, fill: d.risk === sel ? css("--pay") : css("--line"), tabindex: 0 }, svg);
+    hover(c, `<b>${money(d.risk)}</b> per trade (${d.risk / 50} MNQ)<br>${fmtY(ys[i])}`, () => select(d.risk));
+    c.addEventListener("keydown", e => { if (e.key === "Enter") select(d.risk); });
+  });
+}
+function drawMetric() { const [t, f] = METRICS[metric]; $("metricTitle").textContent = t + " by risk per trade"; lineChart($("metricChart"), 640, 250, d => econ(d)[metric], f); }
+function drawDist() {
+  const svg = $("distChart"); svg.innerHTML = "";
+  const r = row(sel), dist = payoutDist(r.p_pay1, r.p_again), labels = ["0", "1", "2", "3", "4+"];
+  const W = 440, H = 230, L = 20, B = 34, T = 18, bw = (W - L - 20) / 5, max = Math.max(...dist), each = DATA.funded.payout * DATA.funded.split;
+  dist.forEach((v, i) => {
+    const h = v / max * (H - T - B), x = L + i * bw + 10;
+    hover(el("rect", { x, y: H - B - h, width: bw - 20, height: h, fill: i ? css("--pay") : css("--breach"), rx: 2 }, svg),
+      `${labels[i]} payout${labels[i] === "1" ? "" : "s"}: ${pct(v)}<br>${money(each * (i === 4 ? 4 : i))}${i === 4 ? " or more" : ""} to you`);
+    el("text", { x: x + (bw - 20) / 2, y: H - B - h - 6, "text-anchor": "middle", "font-size": 12, fill: css("--ink") }, svg, pct(v, 0));
+    el("text", { x: x + (bw - 20) / 2, y: H - B + 16, "text-anchor": "middle", "font-size": 12, fill: css("--muted") }, svg, labels[i]);
+  });
+  el("text", { x: W / 2, y: H - 3, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg, "payouts before the account breaches");
+  $("distCap").textContent = `${pct(dist[0], 0)} of funded accounts breach before any payout; ${pct(dist[4], 0)} deliver four or more.`;
+}
+function drawTable() {
+  const cols = [["Risk", d => money(d.risk)], ["MNQ", d => d.risk / 50], ["P(lock)", d => pct(d.p_lock)], ["P(pay 1)", d => pct(d.p_pay1)],
+    ["P(again)", d => pct(d.p_again)], ["Payouts", (d, m) => m.payouts.toFixed(2)], ["Cost/payout", (d, m) => money(m.costPerPayout)],
+    ["Days/cycle", (d, m) => m.days.toFixed(1)], ["Fleet $/month", (d, m) => money(m.month)], ["ROI", (d, m) => pct(m.roi, 0)]];
+  $("sweep").querySelector("thead").innerHTML = "<tr>" + cols.map(c => `<th>${c[0]}</th>`).join("") + "</tr>";
+  const tb = $("sweep").querySelector("tbody"); tb.innerHTML = "";
+  for (const d of DATA.rows) {
+    const m = econ(d), tr = document.createElement("tr");
+    tr.className = (d.risk === sel ? "sel " : "") + (d.risk >= PROVISIONAL_FROM ? "prov" : "");
+    tr.tabIndex = 0; tr.innerHTML = cols.map(c => `<td>${c[1](d, m)}</td>`).join("");
+    tr.addEventListener("click", () => select(d.risk)); tr.addEventListener("keydown", e => { if (e.key === "Enter") select(d.risk); });
+    tb.appendChild(tr);
+  }
+}
+
+/* my accounts */
+function drawAccounts() {
+  const hasGrid = !!DATA.grids[sel];
+  const head = `<tr><th class="l">Name</th><th class="l">Plan</th><th>Balance</th><th>Highest EOD balance</th><th class="l">Stage</th>
+    <th>Floor</th><th>Room</th><th>Best RR</th><th>Target / stop</th><th>P(payout)</th><th></th></tr>`;
+  const body = accounts.map((a, i) => {
+    const st = accountState(a), live = st.stage === "pre" || st.stage === "post";
+    const rrCell = st.rr ? `<span class="rr">${st.rr}</span>` : live && !hasGrid ? "load file" : "–";
+    const move = st.rr ? `+${money(st.rr * sel)} / −${money(sel)}` : "–";
+    const pv = st.stage === "pay" ? "request $1,000" : st.v != null ? pct(st.v, 0) : "–";
+    return `<tr>
+      <td class="l"><input type="text" data-i="${i}" data-k="name" value="${escapeHtml(a.name)}" style="width:9rem"></td>
+      <td class="l"><select data-i="${i}" data-k="plan">${Object.entries(PLANS).map(([k, p]) => `<option value="${k}"${k === a.plan ? " selected" : ""}>${p.name}</option>`).join("")}</select></td>
+      <td><input type="number" data-i="${i}" data-k="balance" value="${a.balance}" step="10" class="narrow"></td>
+      <td><input type="number" data-i="${i}" data-k="peak" value="${a.peak}" step="10" class="narrow"></td>
+      <td class="l"><span class="tag ${st.stage}">${st.label}</span></td>
+      <td>${money(st.floor)}</td>
+      <td>${money(Math.max(0, st.room))}${live ? ` <span style="color:var(--muted)">(${(st.room / sel).toFixed(1)}R)</span>` : ""}</td>
+      <td>${rrCell}</td><td>${move}</td><td>${pv}</td>
+      <td><button class="btn" data-del="${i}" type="button" aria-label="Remove ${escapeHtml(a.name)}">Remove</button></td></tr>`;
+  }).join("");
+  $("acctBody").innerHTML = (hasGrid ? "" : `<div class="empty" style="margin-bottom:12px">The best RR and P(payout) need the model's policy tables.
+      Run <code>export_results.py</code> in your Funded folder and load <code>funded_results.json</code> with the button at the top. The file is kept in this browser afterwards.</div>`) +
+    `<div class="tablewrap"><table class="accts"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  $("acctBody").querySelectorAll("input,select").forEach(n => n.addEventListener("change", e => {
+    const i = +e.target.dataset.i, k = e.target.dataset.k;
+    accounts[i][k] = k === "name" || k === "plan" ? e.target.value : +e.target.value;
+    if (k === "balance" && accounts[i].peak < accounts[i].balance) accounts[i].peak = accounts[i].balance;
+    saveAccounts(); drawAccounts(); drawLadder();
+  }));
+  $("acctBody").querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => { accounts.splice(+b.dataset.del, 1); saveAccounts(); drawAccounts(); drawLadder(); }));
+}
+function saveAccounts() { $("acctSaved").textContent = store.set("fad-accounts-v1", accounts) ? "Saved in this browser." : "Could not save in this browser; changes last until you close the page."; }
+$("addAcct").addEventListener("click", () => { accounts.push({ name: "Account " + (accounts.length + 1), plan: $("plan").value, balance: 25000, peak: 25000 }); saveAccounts(); drawAccounts(); drawLadder(); });
+
+/* ROI with Monte Carlo */
+let seed = 1;
+function rng() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+function simulate(n, r, sims) {
+  const pe = DATA.eval.pass_rate, f = DATA.funded, each = f.payout * f.split, cost = n * DATA.eval.fee, nets = new Float64Array(sims);
+  for (let s = 0; s < sims; s++) { let k = 0;
+    for (let i = 0; i < n; i++) { if (rng() >= pe || rng() >= r.p_pay1) continue; k++; while (rng() < r.p_again) k++; }
+    nets[s] = k * each - cost; }
+  return nets.sort();
+}
+function drawROI() {
+  const n = Math.max(1, Math.min(1000, Math.round(+$("nEvals").value || 20))), sims = +$("nSims").value, r = row(sel), m = econ(r);
+  const spent = n * DATA.eval.fee, funded = n * DATA.eval.pass_rate, payouts = funded * m.payouts;
+  const cash = payouts * DATA.funded.payout * DATA.funded.split, net = cash - spent, useDays = funded * m.days / DATA.funded.slots;
+  const nets = simulate(n, r, sims), q = p => nets[Math.min(sims - 1, Math.floor(p * sims))];
+  const i0 = nets.findIndex(v => v >= 0), pl = i0 < 0 ? 1 : i0 / sims;
+  $("roiKpis").innerHTML = [["Spent on evals", money(spent)], ["Expected funded accounts", funded.toFixed(1)], ["Expected payouts", payouts.toFixed(1)],
+    ["Expected cash to you", money(cash)], ["Expected net", money(net), net >= 0 ? "good" : "bad"], ["ROI", pct(net / spent, 0), net >= 0 ? "good" : "bad"],
+    ["Chance of losing money", pct(pl, 0), pl > .3 ? "bad" : ""], ["Time to use them", `${useDays.toFixed(0)} trading days`]]
+    .map(([k, v, c]) => `<div><dt>${k}</dt><dd class="${c || ""}">${v}</dd></div>`).join("");
+  const svg = $("mcChart"); svg.innerHTML = "";
+  const W = 440, H = 240, L = 20, R = 10, T = 12, B = 34, bins = 28, lo = nets[0], hi = nets[sims - 1] + 1e-9;
+  const counts = new Array(bins).fill(0); for (const v of nets) counts[Math.min(bins - 1, Math.floor((v - lo) / (hi - lo) * bins))]++;
+  const cmax = Math.max(...counts), bw = (W - L - R) / bins, X = v => L + (v - lo) / (hi - lo) * (W - L - R);
+  counts.forEach((c, i) => { const v0 = lo + i * (hi - lo) / bins, v1 = v0 + (hi - lo) / bins, h = c / cmax * (H - T - B);
+    hover(el("rect", { x: L + i * bw + .5, y: H - B - h, width: bw - 1, height: h, fill: v1 <= 0 ? css("--breach") : css("--pay"), opacity: .85 }, svg),
+      `net ${money(v0)} to ${money(v1)}<br>${pct(c / sims)} of simulations`); });
+  if (lo < 0 && hi > 0) el("line", { x1: X(0), x2: X(0), y1: T, y2: H - B, stroke: css("--ink"), "stroke-dasharray": "4 3" }, svg);
+  niceTicks(lo, hi, 4).filter(v => v >= lo && v <= hi).forEach(v => el("text", { x: X(v), y: H - B + 16, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg, money(v)));
+  el("text", { x: (L + W - R) / 2, y: H - 3, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg, `net profit from ${n} evaluations`);
+  $("mcCap").textContent = `Middle 80% of outcomes: ${money(q(.1))} to ${money(q(.9))}; median ${money(q(.5))}. Payouts per account are all-or-nothing, so small purchases are uneven.`;
+  lineChart($("roiChart"), 440, 240, d => econ(d).roi, v => pct(v, 0));
+}
+$("nEvals").addEventListener("change", drawROI); $("nSims").addEventListener("change", drawROI);
+$("rerun").addEventListener("click", () => { seed = (Math.random() * 4294967296) >>> 0; drawROI(); });
+
+/* model tab */
+const RR_COLORS = { 1: "#2C4A6E", 1.25: "#3E6FA3", 1.5: "#5C93C9", 2: "#7FB4D8", 2.5: "#A8CBA0", 3: "#C9C77A", 3.5: "#D9A65A", 4: "#D98545", 4.5: "#C9603A", 5: "#A8432F" };
+const valColor = v => `hsl(${150 * v}, 45%, ${62 - 22 * v}%)`;
+function heat(svg, g, key, colorFn) {
+  svg.innerHTML = "";
+  const W = 440, H = 300, L = 56, B = 40, T = 10, R = 10, nx = g.y.length, ny = g.m.length, cw = (W - L - R) / nx, ch = (H - T - B) / ny;
+  for (let j = 0; j < ny; j++) for (let k = 0; k < nx; k++)
+    hover(el("rect", { x: L + k * cw, y: H - B - (j + 1) * ch, width: cw + .5, height: ch + .5, fill: colorFn(g[key][j][k]) }, svg),
+      `peak +${money(g.m[j])}, drawdown ${money(g.y[k])}<br>balance ${money(25000 + g.m[j] - g.y[k])}<br>P(first payout) ${pct(g.V[j][k])}<br>best RR ${g.policy[j][k]}`);
+  for (let k = 0; k < nx; k += 4) el("text", { x: L + (k + .5) * cw, y: H - B + 14, "text-anchor": "middle", "font-size": 10, fill: css("--muted") }, svg, "$" + g.y[k]);
+  for (let j = 0; j < ny; j += 4) el("text", { x: L - 6, y: H - B - (j + .5) * ch + 3, "text-anchor": "end", "font-size": 10, fill: css("--muted") }, svg, "+$" + g.m[j]);
+  el("text", { x: (L + W - R) / 2, y: H - 6, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg, "drawdown below peak");
+}
+function drawModel() {
+  const g = DATA.grids[sel];
+  if (!g) { $("preBody").innerHTML = `<div class="empty">No policy tables for ${money(sel)} yet. Load <code>funded_results.json</code> to see the pre-lock and post-lock solutions.</div>`; $("postBody").innerHTML = ""; return; }
+  $("preBody").innerHTML = `<div class="two">
+    <div class="fig"><h2>Pre-lock: P(first payout)</h2><svg id="preV" viewBox="0 0 440 300"></svg><p class="cap">Rows: peak above $25,000. Columns: distance below that peak.</p></div>
+    <div class="fig"><h2>Pre-lock: best RR</h2><svg id="preP" viewBox="0 0 440 300"></svg>
+      <div class="legend">${Object.entries(RR_COLORS).map(([k, c]) => `<span><i style="background:${c}"></i>${k}</span>`).join("")}</div></div></div>`;
+  heat($("preV"), g.pre, "V", valColor); heat($("preP"), g.pre, "policy", v => RR_COLORS[+v] || "#888");
+  $("postBody").innerHTML = `<div class="fig"><h2>Post-lock: P(reaching the payout)</h2><svg id="postV" viewBox="0 0 640 250"></svg>
+    <p class="cap">Strip under the curve: best RR at each balance. Dashed line: the lock level.</p></div>`;
+  const svg = $("postV"), W = 640, H = 250, L = 50, R = 12, T = 12, B = 56, xs = g.post.x;
+  const X = v => L + (v - xs[0]) / (xs[xs.length - 1] - xs[0]) * (W - L - R), Y = v => H - B - v * (H - T - B);
+  for (let i = 0; i <= 4; i++) { el("line", { x1: L, x2: W - R, y1: Y(i / 4), y2: Y(i / 4), stroke: css("--rule") }, svg);
+    el("text", { x: L - 6, y: Y(i / 4) + 4, "text-anchor": "end", "font-size": 11, fill: css("--muted") }, svg, i * 25 + "%"); }
+  el("line", { x1: X(1100), x2: X(1100), y1: T, y2: H - B, stroke: css("--lock"), "stroke-dasharray": "5 4" }, svg);
+  el("polyline", { points: xs.map((x, i) => `${X(x)},${Y(g.post.V[i])}`).join(" "), fill: "none", stroke: css("--line"), "stroke-width": 2 }, svg);
+  const cw = (W - L - R) / xs.length;
+  xs.forEach((x, i) => hover(el("rect", { x: X(x) - cw / 2, y: H - B + 8, width: cw + .5, height: 12, fill: RR_COLORS[+g.post.policy[i]] || "#888" }, svg),
+    `balance ${money(25000 + x)}<br>P(payout) ${pct(g.post.V[i])}<br>best RR ${g.post.policy[i]}`));
+  for (let i = 0; i < xs.length; i += 6) el("text", { x: X(xs[i]), y: H - 10, "text-anchor": "middle", "font-size": 11, fill: css("--muted") }, svg, money(25000 + xs[i]));
+}
+
+/* inputs and fleet */
+const INPUTS = [["fee", "eval", "fee", 1], ["pass", "eval", "pass_rate", 100], ["dpass", "eval", "days_pass", 1], ["dfail", "eval", "days_fail", 1],
+  ["payout", "funded", "payout", 1], ["split", "funded", "split", 100], ["tpd", "funded", "trades_per_day", 1], ["spd", "funded", "signals_per_day", 1]];
+function fillInputs() { for (const [id, g, k, s] of INPUTS) $(id).value = +(DATA[g][k] * s).toFixed(4); $("slotsOut").value = DATA.funded.slots; }
+function readInputs() {
+  for (const [id, g, k, s] of INPUTS) { const v = parseFloat($(id).value); if (Number.isFinite(v) && v > 0) DATA[g][k] = v / s; }
+  const e = evalStage();
+  $("evalKpis").innerHTML = [["Attempts per funded account", e.attempts.toFixed(2)], ["Eval cost per funded account", money(e.cost)],
+    ["Eval days per funded account", e.days.toFixed(1)], ["Trades per account per day", effectiveTradesPerDay().toFixed(2)]]
+    .map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
+  renderAll();
+}
+INPUTS.forEach(([id]) => $(id).addEventListener("input", readInputs));
+function setSlots(n) {
+  DATA.funded.slots = Math.max(1, Math.min(40, n)); $("slotsOut").value = DATA.funded.slots;
+  const tpd = effectiveTradesPerDay(); $("status").className = "status";
+  $("status").textContent = tpd < DATA.funded.trades_per_day
+    ? `${DATA.funded.slots} slots share ${DATA.funded.signals_per_day} signals a day, so each account trades ${tpd.toFixed(2)} times a day and fleet income stops growing.`
+    : `${DATA.funded.slots} slots, one trade per account per day.`;
+  readInputs();
+}
+$("slotsDown").addEventListener("click", () => setSlots(DATA.funded.slots - 1));
+$("slotsUp").addEventListener("click", () => setSlots(DATA.funded.slots + 1));
+
+/* wiring */
+function select(r) { sel = r; $("risk").value = r; renderAll(); }
+function renderAll() { drawLadder(); drawKpis(); drawMetric(); drawDist(); drawTable(); drawAccounts(); drawROI(); drawModel(); }
+function fillRisk() { $("risk").innerHTML = DATA.rows.map(d => `<option value="${d.risk}">${money(d.risk)} (${d.risk / 50} MNQ)</option>`).join("");
+  if (!row(sel)) sel = DATA.rows[Math.floor(DATA.rows.length / 2)].risk; $("risk").value = sel; }
+$("risk").addEventListener("change", e => select(+e.target.value));
+$("plan").addEventListener("change", renderAll);
+$("metric").addEventListener("change", e => { metric = e.target.value; drawMetric(); });
+document.querySelectorAll("nav.tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("nav.tabs button").forEach(x => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll(".panel").forEach(p => p.hidden = p.id !== "tab-" + b.dataset.tab);
+}));
+function loadResults(d, source) {
+  if (!Array.isArray(d.rows) || !d.rows.length || !("p_pay1" in d.rows[0])) throw new Error("the file has no rows with p_pay1, p_again, trades_first and trades_cycle");
+  const grids = {}; for (const k in (d.grids || {})) grids[+k] = d.grids[k];
+  DATA = { meta: d.meta || {}, eval: { ...BUILTIN.eval, ...(d.eval || {}) },
+           funded: { ...BUILTIN.funded, ...(d.funded || {}), slots: DATA.funded.slots, signals_per_day: DATA.funded.signals_per_day },
+           rows: d.rows.map(r => ({ ...r, risk: +r.risk })), grids };
+  fillRisk(); fillInputs(); readInputs();
+  $("status").className = "status"; $("status").textContent = `${source}: ${DATA.rows.length} risk levels, policy tables for ${Object.keys(grids).length}.`;
+}
+$("file").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { const d = JSON.parse(await f.text()); loadResults(d, "Loaded " + f.name);
+    if (!store.set("fad-results-v1", d)) $("status").textContent += " Too large to keep in this browser; load it again next visit.";
+  } catch (err) { $("status").className = "status err"; $("status").textContent = `Could not load ${f.name}: ${err.message}. The current results are still shown.`; }
+});
+fillRisk(); fillInputs();
+const saved = store.get("fad-results-v1");
+if (saved) { try { loadResults(saved, "Results from your last visit"); } catch { readInputs(); } }
+else { readInputs(); $("status").textContent = "Showing the built-in 25-point-stop results. Load a results file to add the policy tables."; }
+</script>
+</body>
+</html>
