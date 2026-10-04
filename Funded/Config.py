@@ -28,6 +28,12 @@ class Plan:
         """Amount withdrawn at payout_target: a share of profit, up to the cap."""
         return min(self.payout_cap, self.payout_pct * self.payout_target)
 
+    @property
+    def risk(self):
+        """Default risk per trade: a quarter of the drawdown (4 full losses to breach),
+        rounded to a whole number of MNQ contracts ($50 per contract at a 25-point stop)."""
+        return 50 * round(self.dd_limit / 4 / 50)
+
 
 PLANS = {
     "lucid25flex": Plan("Lucid 25K Flex", start=25_000, dd_limit=1_000, lock_peak=1_100,

@@ -2,6 +2,7 @@
 import time
 import numpy as np
 import Postlock as post
+from Config import PLAN
 from Prelock import (m_grid, y_grid, Coins, risk, R_ALL, collapse_to_coin,   # grid and data
                      transition_pre, solve_pre_fast, evaluate_policy_pre_fast,  # model
                      fixed_policy, show_row, expected_trades_pre)                                     # helpers
@@ -98,9 +99,10 @@ if RUN_MAIN:
 
     # ---- 6. fair-coin benchmark: P(lock) must equal (20/21)^22 --------------------------
     fair = {1.0: [(0.5, 1.0), (0.5, -1.0)]}
-    V_fair, _ = solve_pre_fast(fair, V_post_full, risk=50, lock_one=True, tol=1e-9)
-    exact = (20 / 21) ** 22
-    print(f"\nfair-coin P(lock): solver {V_fair[0, 0]:.6f}   exact {exact:.6f}")
+    step = post.Dx                                      # one grid cell per trade
+    V_fair, _ = solve_pre_fast(fair, None, risk=step, lock_one=True, tol=1e-9)
+    d, a = round(post.PLAN.dd_limit / step), round(post.PLAN.lock_peak / step)
+    print(f"\nfair-coin P(lock): solver {V_fair[0, 0]:.6f}   exact {(d / (d + 1)) ** a:.6f}")
 
     # ---- 7. P(lock) under the payout-optimal policy --------------------------------------
     V_lock = evaluate_policy_pre_fast(policy_pre, Coins, V_post_full, lock_one=True)    # follow the SAME policy,
@@ -127,7 +129,7 @@ if RUN_MAIN:
 # ---- stage 11: risk sweep ---------------------------------------------------------------
 import Lifecycle as life
 
-RISKS = list(range(100, 1001, 50))       # $ per R = 2 to 10 MNQ
+RISKS = list(range(100, int(PLAN.dd_limit) + 1, step))     # $ per R = 2 to 10 MNQ
 i_entry = post.cell_index(post.Entry, post.Floor, post.Dx)
 
 eval_cost, eval_days = life.eval_stage(life.Eval_fee, life.Eval_pass_rate, life.Days_pass, life.Days_fail,

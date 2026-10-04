@@ -22,7 +22,7 @@ def run_sweep(risks, coins=None):
         payouts, cash, fdays = life.funded_stage(
             q=V_pre_r[0, 0], p=V_post_r[i_entry], trades_first=T_first,
             trades_cycle=T_post_r[i_entry], payout=life.Payout, split=life.Split,
-            trades_per_day=life.Trades_per_day)
+            trades_per_day=life.Trades_per_day, max_payouts=life.Max_payouts)
         net, cdays, per_day, fleet, roi = life.cycle_economics(
             eval_cost, eval_days, cash, fdays, life.N_slots)
         rows.append(dict(risk=r, mnq=r // 50, p_lock=p_lock, p_pay1=V_pre_r[0, 0],

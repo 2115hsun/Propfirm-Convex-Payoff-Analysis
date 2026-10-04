@@ -29,7 +29,7 @@ if __name__ == "__main__":
 # Funded Lifecycle Calc
 # ==========================================================================================
 
-Payout = 1000
+Payout = PLAN.payout 
 Split = 0.9
 Trades_per_day = 1
 

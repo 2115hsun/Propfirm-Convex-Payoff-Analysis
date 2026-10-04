@@ -1,5 +1,6 @@
 """run_postlock.py — checks and tables for the post-lock model in Postlock.py."""
 import numpy as np
+from Config import PLAN
 from Postlock import (Coins, risk, RETURN_ARRAYS,              # data
                       grid, Floor, Target, Entry, Dx,          # rules and grid
                       cell_index, transition, bellman_backup,  # functions
@@ -36,8 +37,8 @@ d = transition(Entry, Coins[1.5], Floor, Target, Dx, risk)
 print("total prob:", sum(d.values()))
 
 i_entry = cell_index(Entry, Floor, Dx)          # = 19
-print(f"P(reach $27,100 before $25,100 | locked at $26,100) = "
-      f"{V_star[i_entry]:.4f}  best RR {policy[i_entry]}")
+print(f"P(reach ${PLAN.start + Target:,.0f} before ${PLAN.start + Floor:,.0f} | "
+      f"locked at ${PLAN.start + Entry:,.0f}) = {V_star[i_entry]:.4f}  best RR {policy[i_entry]}")
 
 assert all(p >= 0 for p in d.values()), f"negative probability: {d}"
 
@@ -52,7 +53,9 @@ fair = {1.0: [(0.5, 1.0), (0.5, -1.0)]}
 fair_policy = {i: 1.0 for i in range(len(grid))}
 T_fair = expected_trades_post(fair, fair_policy, risk=Dx)
 i = cell_index(Entry, Floor, Dx)
-print(f"\nfair coin, expected trades from the lock entry: {T_fair[i]:.2f}   (exact 400)")
+a = round((Entry - Floor) / Dx)          # steps from the lock entry down to the floor
+b = round((Target - Entry) / Dx)         # steps from the lock entry up to the payout
+print(f"\nfair coin, expected trades from the lock entry: {T_fair[i]:.2f}   (exact {a * b})")
 
 # The real answer: trades from the lock entry to payout-or-death, at $250, optimal policy.
 V_star, policy = solve_post(Coins, risk)

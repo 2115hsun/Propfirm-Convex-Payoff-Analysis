@@ -17,7 +17,7 @@ V_target = 1.0
 with open("ledgers.pkl", "rb") as f:
     RETURN_ARRAYS = pickle.load(f)
 
-risk = 250
+risk = PLAN.risk
 
 def collapse_to_coin(R_array):
     values, counts = np.unique(R_array, return_counts=True)
