@@ -8,6 +8,7 @@ import Prelock as pre
 import Lifecycle as life
 import Sweep
 from Config import PLAN
+import os
 
 step  = 50 if PLAN.dd_limit <= 2_000 else 150          # keep the sweep to about 20-40 levels
 RISKS = list(range(100, int(PLAN.dd_limit) + 1, step)) # up to one loss = the whole drawdown        # $ per R, 2 to 20 MNQ at a 25-point stop
@@ -28,7 +29,8 @@ for r in RISKS:
     )
 
 results = dict(
-    meta=dict(stop_points=25, trades=len(post.RETURN_ARRAYS[1.0])),
+    meta=dict(stop_points=25, trades=len(post.RETURN_ARRAYS[1.0]),
+              plan_key=os.environ.get("PLAN", "lucid25flex")),
     eval=dict(fee=life.Eval_fee, pass_rate=life.Eval_pass_rate,
               days_pass=life.Days_pass, days_fail=life.Days_fail),
     funded=dict(payout=life.Payout, split=life.Split, slots=life.N_slots,

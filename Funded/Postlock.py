@@ -8,7 +8,7 @@ Floor  = PLAN.locked_floor      # frozen floor after the lock
 Target = PLAN.payout_target     # payout level
 Entry  = PLAN.lock_peak         # balance when the account locks
 Dx     = PLAN.dx
-USE_MAE = False
+USE_MAE = True
 
 try:
     with open("mae.pkl", "rb") as f:
@@ -38,7 +38,8 @@ def collapse_to_coin(R_array, mae_array=None):
     return list(zip(counts / counts.sum(), pairs[:, 0], pairs[:, 1]))
 
 
-Coins = {rho: collapse_to_coin(R, MAE if USE_MAE else None) for rho, R in RETURN_ARRAYS.items()}
+Coins = {rho: collapse_to_coin(R, MAE[rho] if (USE_MAE and MAE is not None) else None)
+         for rho, R in RETURN_ARRAYS.items()}
 
 for rho in Coins:
     assert abs(sum(p for p, r, *_ in Coins[rho]) - 1.0) < 1e-9, f"coin mass != 1 for RR {rho}"

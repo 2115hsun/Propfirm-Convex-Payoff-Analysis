@@ -78,6 +78,7 @@ def transition_pre(j, k, coin, risk):
             dest["breach"] = dest.get("breach", 0.0) + prob
             continue
         add_to_grid_pre(m, x + R * risk, prob, dest)
+    return dest
 
 
 # ====================================================================================

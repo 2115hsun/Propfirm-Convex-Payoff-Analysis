@@ -74,8 +74,9 @@ if RUN_MAIN:
         print(f"  RR {rho:<4}  first {R_ALL[rho][:half].mean():+.3f}R   second {R_ALL[rho][half:].mean():+.3f}R")
 
     # ---- 4. out-of-sample: build on the first half, score on the second -----------------
-    Coins_A = {rho: collapse_to_coin(R_ALL[rho][:half]) for rho in R_ALL}     # earlier trades
-    Coins_B = {rho: collapse_to_coin(R_ALL[rho][half:]) for rho in R_ALL}     # later trades
+    mae = post.MAE if post.USE_MAE else None
+    Coins_A = {rho: collapse_to_coin(R_ALL[rho][:half], None if mae is None else mae[rho][:half]) for rho in R_ALL}
+    Coins_B = {rho: collapse_to_coin(R_ALL[rho][half:], None if mae is None else mae[rho][half:]) for rho in R_ALL}
 
     V_post_A, _ = post.solve_post(Coins_A, risk)    # post-lock from the first half only
     V_post_B, _ = post.solve_post(Coins_B, risk)    # post-lock from the second half only
