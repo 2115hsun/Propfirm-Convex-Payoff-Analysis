@@ -9,8 +9,8 @@ from Postlock import (Coins, risk, RETURN_ARRAYS,              # data
 
 print(f"ledger n = {len(RETURN_ARRAYS[1.0])} trades")
 for rho in sorted(Coins):
-    edge = sum(p * r for p, r in Coins[rho])
-    assert abs(sum(p for p, r in Coins[rho]) - 1.0) < 1e-9
+    edge = sum(p * r for p, r, *_ in Coins[rho])
+    assert abs(sum(p for p, r, *_ in Coins[rho]) - 1.0) < 1e-9
     print(f"RR={rho:<4}: edge={edge:+.4f}R")
 
 V_init = np.zeros(len(grid))     # initial guess: all zeros

@@ -72,9 +72,12 @@ def transition_pre(j, k, coin, risk):
     y = y_grid[k]                  # drawdown of this cell
     x = m - y                      # current equity
     dest = {}
-    for prob, R in coin:
+    for prob, R, *rest in coin:
+        mae = rest[0] if rest else 0.0
+        if x - mae * risk <= m - DD_limit:                   # dipped to the trailing floor mid-trade
+            dest["breach"] = dest.get("breach", 0.0) + prob
+            continue
         add_to_grid_pre(m, x + R * risk, prob, dest)
-    return dest
 
 
 # ====================================================================================

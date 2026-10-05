@@ -8,6 +8,13 @@ Floor  = PLAN.locked_floor      # frozen floor after the lock
 Target = PLAN.payout_target     # payout level
 Entry  = PLAN.lock_peak         # balance when the account locks
 Dx     = PLAN.dx
+USE_MAE = False
+
+try:
+    with open("mae.pkl", "rb") as f:
+        MAE = pickle.load(f)
+except FileNotFoundError:
+    MAE = None 
 
 grid = np.arange(Floor+Dx, Target, Dx)  # [50, 100, ..., 1950]
 
@@ -19,14 +26,22 @@ with open("ledgers.pkl", "rb") as f:
 
 risk = PLAN.risk
 
-def collapse_to_coin(R_array):
-    values, counts = np.unique(R_array, return_counts=True)
-    return list (zip(counts / counts.sum(), values))  # [(prob, R), ...]
+def collapse_to_coin(R_array, mae_array=None):
+    """Distinct outcomes as (probability, R, MAE). With no MAE, every MAE is 0."""
+    R_array = np.asarray(R_array, float)
+    if mae_array is None:
+        mae = np.zeros_like(R_array)
+    else:
+        mae = np.maximum(np.asarray(mae_array, float), np.maximum(0.0, -R_array))  # a 0.4R loss dipped at least 0.4R
+        mae = np.ceil(mae * 20) / 20                     # round up to 0.05R: fewer outcomes, still conservative
+    pairs, counts = np.unique(np.column_stack([R_array, mae]), axis=0, return_counts=True)
+    return list(zip(counts / counts.sum(), pairs[:, 0], pairs[:, 1]))
 
-Coins = {rho: collapse_to_coin(R_array) for rho, R_array in RETURN_ARRAYS.items()}
+
+Coins = {rho: collapse_to_coin(R, MAE if USE_MAE else None) for rho, R in RETURN_ARRAYS.items()}
 
 for rho in Coins:
-    assert abs(sum(p for p, r in Coins[rho]) - 1.0) < 1e-9, f"coin mass != 1 for RR {rho}"
+    assert abs(sum(p for p, r, *_ in Coins[rho]) - 1.0) < 1e-9, f"coin mass != 1 for RR {rho}"
 
 #====================================================================================
 
@@ -59,10 +74,13 @@ def add_to_grid(x_prime, prob, dest, Floor, Target, Dx):
 
 def transition (x, coin, Floor, Target, Dx, risk):
     dest = {}
-    for proob, R in coin:
-        x_prime = x + R * risk
-        add_to_grid(x_prime, proob, dest, Floor, Target, Dx)
-    return dest
+    for prob, R, *rest in coin:
+        mae = rest[0] if rest else 0.0
+        if x - mae*risk <= Floor:
+            dest["floor"] = dest.get("floor", 0.0) + prob
+            continue
+        add_to_grid(x+R*risk, prob, dest, Floor, Target, Dx)
+    return dest 
 
 #====================================================================================
 
