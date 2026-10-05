@@ -30,17 +30,22 @@ for r in RISKS:
 
 results = dict(
     meta=dict(stop_points=25, trades=len(post.RETURN_ARRAYS[1.0]),
-              plan_key=os.environ.get("PLAN", "lucid25flex")),
-    eval=dict(fee=life.Eval_fee, pass_rate=life.Eval_pass_rate,
+              plan_key=os.environ.get("PLAN", "topstep50"),
+              plan=PLAN.__dict__, use_mae=post.USE_MAE),
+    eval=dict(fee=life.Eval_fee, activation=life.Activation_fee, pass_rate=life.Eval_pass_rate,
               days_pass=life.Days_pass, days_fail=life.Days_fail),
     funded=dict(payout=life.Payout, split=life.Split, slots=life.N_slots,
-                trades_per_day=life.Trades_per_day),
+                trades_per_day=life.Trades_per_day, max_payouts=life.Max_payouts),
     rows=sweep.to_dict(orient="records"),
     grids=grids,
 )
-with open("funded_results.json", "w") as f:
+tag = "mae" if post.USE_MAE else "nomae"
+out = f"funded_results_{results['meta']['plan_key']}_{tag}.json"
+with open(out, "w") as f:
     json.dump(results, f)
 
-row = sweep[sweep.risk == 250].iloc[0]
-print(f"wrote funded_results.json: {len(RISKS)} risk levels with policy tables")
-print(f"check, $250 row: P(pay1) {row.p_pay1:.4f} (expect 0.3733), P(again) {row.p_again:.4f} (expect 0.6401)")
+
+r = min(RISKS, key=lambda v: abs(v - PLAN.risk))
+row = sweep[sweep.risk == r].iloc[0]
+print(f"wrote {out}: {PLAN.name}, MAE {'on' if post.USE_MAE else 'off'}, {len(RISKS)} risk levels")
+print(f"${r} row: P(lock) {row.p_lock:.4f}  P(pay1) {row.p_pay1:.4f}  P(again) {row.p_again:.4f}")
