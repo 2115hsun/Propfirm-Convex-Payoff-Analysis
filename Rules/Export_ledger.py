@@ -24,6 +24,27 @@ FIXED_DK = dict(
 
 STOP, MAXHOLD = 25, 60          # <-- the stop that DEFINES 1R (your validated value)
 
+def mae_by_rr(E, bars, rrs, max_hold):
+    """Worst dip (R, capped at 1) for each trade, measured only until that RR's exit:
+    the target bar if the target is hit before the stop, else the stop bar, else the time limit."""
+    high, low = bars["high"].to_numpy(), bars["low"].to_numpy()
+    pos = bars.index.get_indexer(E.entry_time)              # entry bar of each trade
+    sd = E.stop_points
+    out = {rr: np.empty(len(pos)) for rr in rrs}
+    for t, e in enumerate(pos):
+        d, entry = E.direction[t], E.entry_price[t]
+        j0, j1 = e + 1, min(e + 1 + max_hold, len(bars))   # same window as backtest_entries
+        h, lo = high[j0:j1], low[j0:j1]
+        fav = (h - entry) / sd if d == 1 else (entry - lo) / sd
+        adv = (entry - lo) / sd if d == 1 else (h - entry) / sd
+        hits = np.flatnonzero(adv >= 1.0)
+        sb = int(hits[0]) if hits.size else len(adv)        # stop bar, or "never stopped"
+        for rr in rrs:
+            tgt = np.flatnonzero(fav[:sb] >= rr)            # target touched before the stop bar
+            end = int(tgt[0]) if tgt.size else min(sb, len(adv) - 1)   # exit bar for this RR
+            out[rr][t] = min(float(adv[:end + 1].max()), 1.0) if adv.size else 0.0
+    return out
+
 # build E exactly as your validated block does
 strat  = __import__("strategies.dual_kernel_v2", fromlist=["get_strategy"]).get_strategy(**FIXED_DK)
 bars   = load_ohlc(DATA_PATH, rth_only=False, timeframe="1min", tz="America/New_York")
@@ -48,3 +69,18 @@ if all_pos:
     print("\nSaved ledgers.pkl (stop=25, 2026 window, one_position=True)")
 else:
     print("\nNOT saved — edges negative, E doesn't match validated setup.")
+
+MAE_BY_RR = mae_by_rr(E, window, RRS, MAXHOLD)
+with open(r"C:\Users\2115h\Desktop\Trading\Propfirm Convex Analysis\Funded\mae.pkl", "wb") as f:
+    pickle.dump(MAE_BY_RR, f)
+    
+
+old = np.minimum(E.mae_before, 1.0)
+for rr in RRS:
+    win = E.mfe_before >= rr
+    assert np.all(MAE_BY_RR[rr] <= old + 1e-9),             f"RR {rr}: MAE larger than full-window MAE"
+    assert np.allclose(MAE_BY_RR[rr][~win], old[~win]),     f"RR {rr}: non-winners changed"
+for a, b in zip(RRS, RRS[1:]):
+    assert np.all(MAE_BY_RR[a] <= MAE_BY_RR[b] + 1e-9),     f"MAE at RR {a} exceeds RR {b}"
+for rr in RRS:
+    print(f"RR {rr:<4}: mean MAE {MAE_BY_RR[rr].mean():.3f}R   (full window {old.mean():.3f}R)")
