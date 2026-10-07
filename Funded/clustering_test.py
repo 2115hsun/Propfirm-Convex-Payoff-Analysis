@@ -5,6 +5,9 @@ N_SHUFFLES = 5000 # numbers of random reorderings
 RRS = [1.0, 1.5, 2.0, 2.5, 3.0] # which RR to target 
 rng = np.random.default_rng(0) # random number generator for reproducibility
 
+# Trade Level Clustering Test =======================================================================
+"""This section is intended to answer the question "does this trade's result predict the next one's? It treats the 884 trades in 2026 as one long sequence,
+and test whether losses bunch up in that sequnece more than chance. The answer is mostly no, but there is a small effect as RR kept increasing."""
 
 with open("ledgers.pkl", "rb") as f:
     R_ALL = pickle.load(f)
@@ -37,7 +40,8 @@ STATS = {
     "longest losing streak":  (longest_losing_streak, "higher"),
     "number of runs":         (n_runs, "lower"),
     "lag-1 autocorrelation":  (lag1, "higher"),
-    "worst 10-trade sum (R)": (worst_window, "lower"),
+    "worst 20-trade sum (R)": (lambda R: worst_window(R, 20), "lower"),
+    "worst 30-trade sum (R)": (lambda R: worst_window(R, 30), "lower"),
 }
 
 for rho in RRS:
