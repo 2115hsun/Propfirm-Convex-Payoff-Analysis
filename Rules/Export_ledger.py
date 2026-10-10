@@ -63,18 +63,8 @@ for rho in RRS:
     if edge <= 0: all_pos = False
     print(f"  RR={rho:<4}: WR {measured_winrate(E,rho):5.1%} | edge {edge:+.4f}R  {'OK' if edge>0 else '*** NEG ***'}")
 
-if all_pos:
-    with open(r"..\Funded\ledgers.pkl", "wb") as f:
-        pickle.dump(RETURN_ARRAYS, f)
-    print("\nSaved ledgers.pkl (stop=25, 2026 window, one_position=True)")
-else:
-    print("\nNOT saved — edges negative, E doesn't match validated setup.")
-
+# ---- MAE per RR, checked before anything is saved ----
 MAE_BY_RR = mae_by_rr(E, window, RRS, MAXHOLD)
-with open(r"C:\Users\2115h\Desktop\Trading\Propfirm Convex Analysis\Funded\mae.pkl", "wb") as f:
-    pickle.dump(MAE_BY_RR, f)
-    
-
 old = np.minimum(E.mae_before, 1.0)
 for rr in RRS:
     win = E.mfe_before >= rr
@@ -84,3 +74,15 @@ for a, b in zip(RRS, RRS[1:]):
     assert np.all(MAE_BY_RR[a] <= MAE_BY_RR[b] + 1e-9),     f"MAE at RR {a} exceeds RR {b}"
 for rr in RRS:
     print(f"RR {rr:<4}: mean MAE {MAE_BY_RR[rr].mean():.3f}R   (full window {old.mean():.3f}R)")
+
+# ---- save all four files together, only if everything checks out ----
+if all_pos:
+    OUT = r"..\Funded"
+    for name, obj in [("ledgers.pkl", RETURN_ARRAYS), ("mae.pkl", MAE_BY_RR),
+                      ("day_ids.pkl", np.asarray(E.day_ids)), ("entry_times.pkl", list(E.entry_time))]:
+        with open(rf"{OUT}\{name}", "wb") as f:
+            pickle.dump(obj, f)
+    print(f"\nSaved ledgers, MAE, day ids and entry times: {len(E.day_ids)} trades over "
+          f"{len(set(E.day_ids))} trading days (stop={STOP}, 2026 window, one_position=True)")
+else:
+    print("\nNOTHING saved: edges negative, E doesn't match the validated setup.")
