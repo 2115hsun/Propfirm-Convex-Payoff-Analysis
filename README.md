@@ -18,15 +18,15 @@ A prop firm (not the investment entity) sells product called evaluation. A retai
 
 Trading prop firms is a repeating cycle. A trader pays a fee for an evaluation, which may or may not pass. Each pass buys a funded account, which pays out until it breaches, and then the cycle starts again. The evaluation behaves like an option contract: the fee is the most that can be lost, and the funded account is the payoff. Whether the cycle makes money depends on two things: what each funded account costs in evaluation fees and time, and how many payouts it delivers before it breaches.
 
-A funded account is a race between two barriers. Below it sits a floor that trails the account's highest balance, so every gain also raises the level that ends the account. Above it sits the lock, where the floor freezes, and beyond that the payout. Before every trade the trader picks a reward-to-risk target (RR) and a size. A small target wins often but slowly; a large one wins rarely but can clear the lock in one trade. With a small edge, the best choice depends on the account's room above the floor and its distance to the next milestone.
+A funded account is a race between two barriers. Below it sits a floor that trails the account's highest balance, so every gain also raises the level that ends the account. Above it sits the lock, where the floor freezes, and beyond that the payout. Before every trade, the trader picks a reward-to-risk target (RR) and a size. A small target wins often but slowly; a large one wins rarely but can clear the lock in one trade. With a small edge, the best choice depends on the account's room above the floor and its distance to the next milestone.
 
-Prop firms are usually treated as a test of discretionary trading skill by retail trading enthusiats. This project treats the funded account as a first-passage problem with path-dependent barriers: the state is the balance and peak, the action is the RR, and the objective is the probability of a payout before the floor. Its solution, combined with the evaluation's fee, pass rate and duration, prices the full cycle. 
+Prop firms are usually treated as a test of discretionary trading skill by retail trading enthusiasts. This project treats the funded account as a first-passage problem with path-dependent barriers: the state is the balance and peak, the action is the RR, and the objective is the probability of a payout before the floor. Its solution, combined with the evaluation's fee, pass rate, and duration, prices the full cycle. 
 
 ### Data
 
-NQ (Nasdaq-100 E-mini) 1-minute bars, 2021 to 2026, about 1.77 million rows in Parquet, timstamps in America/New York. 
+NQ (Nasdaq-100 E-mini) 1-minute bars, 2021 to 2026, about 1.77 million rows in Parquet, timestamps in America/New York. 
 
-The contracts are pulled from Databento and a custom rolling mechanism is designed for contract rollover. 
+The contracts are pulled from Databento, and a custom rolling mechanism is designed for contract rollover. 
 
 ### Strategy 
 
