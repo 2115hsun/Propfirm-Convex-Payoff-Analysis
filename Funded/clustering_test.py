@@ -85,3 +85,14 @@ print("\nsmall example:", daily_totals(np.array([1, -1, -1, 1, 1, -1]), np.array
 
 D = daily_totals(np.asarray(R_ALL[1.0], float), DAY)
 print("days:", len(D), "  losing days:", np.mean(D < 0).round(3), "  worst day:", D.min(), "  best day:", D.max())
+
+
+real = longest_losing_streak(D)
+shuffled = [longest_losing_streak(rng.permutation(D)) for _ in range(N_SHUFFLES)]
+p = np.mean(np.array(shuffled) >= real)
+print(f"losing-day streak: real {real}   shuffled median {np.median(shuffled):.0f}   p = {p:.3f}")
+
+real5 = worst_window(D, 5)
+shuffled5 = [worst_window(rng.permutation(D), 5) for _ in range(N_SHUFFLES)]
+p5 = np.mean(np.array(shuffled5) <= real5)
+print(f"worst 5-day sum:   real {real5:.1f}   shuffled median {np.median(shuffled5):.1f}   p = {p5:.3f}")
