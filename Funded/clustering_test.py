@@ -53,3 +53,35 @@ for rho in RRS:
         sims = np.array([fn(x) for x in shuffles])
         p = np.mean(sims >= real) if direction == "higher" else np.mean(sims <= real)
         print(f"  {name:<24} real {real:8.3f}   shuffled median {np.median(sims):8.3f}   p = {p:.3f}")
+
+# Streak dates ===============================================================================
+with open ("entry_times.pkl", "rb") as f:
+    TIMES = pickle.load(f)
+
+R = np.asarray(R_ALL[1.0], float)
+run, best, end = 0, 0, 0
+for i, r in enumerate(R):
+    run = run + 1 if r<0 else 0
+    if run > best:
+        best = run
+        end = i
+start = end - best + 1
+
+print(f"\nLongest losing streak at RR 1.0: {best} trades, from {TIMES[start]} to {TIMES[end]} (inclusive)")
+print("the streak: ", R[start:end + 1])
+print("just before/after:", R[start-1], R[end+1])
+
+# Day Level Clustering Test =======================================================================
+with open("day_ids.pkl", "rb") as f:
+    DAY = np.asanyarray(pickle.load(f))
+
+def daily_totals(R, day):
+    """Net R per trading day, in date order."""
+    _, slots = np.unique(day, return_inverse=True)
+    return np.bincount(slots, weights=R)
+
+print("\nsmall example:", daily_totals(np.array([1, -1, -1, 1, 1, -1]), np.array([5, 5, 6, 8, 8, 8])),
+      "(expect [ 0. -1.  1.])")
+
+D = daily_totals(np.asarray(R_ALL[1.0], float), DAY)
+print("days:", len(D), "  losing days:", np.mean(D < 0).round(3), "  worst day:", D.min(), "  best day:", D.max())
