@@ -24,9 +24,11 @@ Prop firms are usually treated as a test of discretionary trading skill by retai
 
 ### Data
 
-NQ (Nasdaq-100 E-mini) 1-minute bars, 2021 to 2026, about 1.77 million rows in Parquet, timestamps in America/New York. 
+The data are NQ (Nasdaq-100 E-mini) 1-minute OHLCV bars from Databento, 2021 to 2026. Databento provides one row per listed instrument per minute, including individual contract months and calendar spreads, with prices stored as fixed-point integers. 
 
-The contracts are pulled from Databento, and a custom rolling mechanism is designed for contract rollover. 
+The raw file was converted to a continuous series in three steps. Prices were rescaled from fixed-point to index points, and timestamps were parsed in UTC. At each minute, only the instrument with the highest traded volume was kept, so the series follows the most liquid contract and rolls to the next contract month when its volume overtakes the expiring one. Rows with a close outside 1,000 to 40,000 points, an open below 1,000, or a non-positive low were removed, which excludes spread instruments and erroneous prints. This reduced 2,595,575 rows to 1,767,373, with no duplicate timestamps and closing prices between 10,495.75 and 30,970.25. Timestamps are converted to America/New_York for analysis.
+
+The series is not back-adjusted, so prices step at each roll by the difference between contract months.
 
 ### Strategy 
 
