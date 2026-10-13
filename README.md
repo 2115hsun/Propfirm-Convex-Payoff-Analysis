@@ -2,11 +2,11 @@
 
 This project asks how to trade a prop firm funded account to get paid as often as possible, and whether buying evaluations and collecting payouts generates wealth overall. It models the funded account as a Markov decision process with absorbing barriers, solves it by backward induction on real trade data, and checks the results out of sample. 
 
-The trading strategy is an input to the model. The contribution is the method: encoding a firm's rules as states and boundaries, finding the best action in every state, measuring how long it takes, and pricing the full cycle. 
+The trading strategy is only an input to the model. The contribution is the method, which is the key for this modeling effort: classifying a firm's rules as states and boundaries, finding the best action in every state, measuring how long it takes, and pricing the full cycle. 
 
 ### Introduction to Prop Firms 
 
-A prop firm (not the investment entity) sells product called evaluation. A retail trader pay roughly $50 to $200 to trade a simulated futures account of $X value (i.e. Topstep Trader's $50,000 account) under fixed rules (i.e. max losses is $2,000, maximum profit per day cannot exceed 50% of total profit target, etc). If you reach the profit target without breaking the loss limit, you get a funded account and keep about 90% of what you withdraw. 
+A prop firm (not the investment entity) sells a type of product called funded evaluation. A retail trader pays roughly $50 to $200 to trade a simulated futures account of $X value (i.e. Topstep Trader's $50,000 account) under fixed rules (i.e. max losses is $2,000, maximum profit per day cannot exceed 50% of total profit target, etc). If you reach the profit target without breaking the loss limit, you get a funded account and can attempt to generate positive P&L under similar set of rules and keep about 90% of what you withdraw. 
 | Rule | Effect |
 |---|---|
 | Trailing drawdown | The account closes if the balance falls a fixed amount (e.g. \$1,000 on a 25K) below its highest end-of-day balance. The floor rises with the peak and never falls. |
@@ -16,9 +16,9 @@ A prop firm (not the investment entity) sells product called evaluation. A retai
 
 ### The Problem
 
-Trading prop firms is a repeating cycle. A trader pays a fee for an evaluation, which may or may not pass. Each pass buys a funded account, which pays out until it breaches, and then the cycle starts again. The evaluation behaves like an option contract: the fee is the most that can be lost, and the funded account is the payoff. Whether the cycle makes money depends on two things: what each funded account costs in evaluation fees and time, and how many payouts it delivers before it breaches.
+Trading prop firms is a repeating cycle. A trader pays a fee for an evaluation, which may or may not pass. Each pass buys a funded account, which pays out until it breaches, and then the cycle starts again. The evaluation behaves like an option contract: the fee is the most that can be lost, and the funded account is the payoff. Whether the cycle generate positive expectancy depends on two things: what each funded account costs in evaluation fees and time, and how many payouts it delivers before it breaches.
 
-A funded account is a race between two barriers. Below it sits a floor that trails the account's highest balance, so every gain also raises the level that ends the account. Above it sits the lock, where the floor freezes, and beyond that the payout. Before every trade, the trader picks a reward-to-risk target (RR) and a size. A small target wins often but slowly; a large one wins rarely but can clear the lock in one trade. With a small edge, the best choice depends on the account's room above the floor and its distance to the next milestone.
+We can also treat funded account as a race between two barriers. Below it sits a floor that trails the account's highest balance, so every gain also raises the level that ends the account. Above it sits the lock, where the floor freezes, and beyond that the payout. Before every trade, the trader picks a reward-to-risk target (RR) and a size. A small target wins often but slowly; a large one wins rarely but can clear the lock in one trade. With a small edge, the best choice depends on the account's room above the floor and its distance to the next milestone.
 
 Prop firms are usually treated as a test of discretionary trading skill by retail trading enthusiasts. This project treats the funded account as a first-passage problem with path-dependent barriers: the state is the balance and peak, the action is the RR, and the objective is the probability of a payout before the floor. Its solution, combined with the evaluation's fee, pass rate, and duration, prices the full cycle. 
 
@@ -43,6 +43,6 @@ Each trade has a fixed 25-point stop, which defines one unit of risk (1R). It ex
 | Win rate | 52.6% | 47.2% | 42.3% | 33.7% | 29.2% | 25.5% | 22.6% | 20.4% | 18.0% | 15.0% |
 | Mean return (R/trade) | +0.055 | +0.065 | +0.062 | +0.027 | +0.054 | +0.074 | +0.092 | +0.125 | +0.133 | +0.106 |
 
-The rule was selected from roughly 25 candidate designs tested on NQ, including mean-reversion, opening-range, VWAP, gap and volatility-breakout rules. It was the only one whose mean return exceeded a zero-edge benchmark at a usable trade frequency. The estimates are therefore subject to selection bias. Because the strategy has not been tested across market regimes, it is treated here as a realistic input distribution, with no expectation that its returns persist.
+The rule was selected from roughly 25 candidate designs tested on NQ, including mean-reversion, opening-range, VWAP, gap and volatility-breakout rules. It was the only one whose mean return slightly exceeded a zero-edge benchmark at a usable trade frequency. The estimates are therefore subject to selection bias. Because the strategy has not been tested across market regimes, it is treated here as a realistic input distribution, with no expectation that its returns persist.
 
 Trades that reach neither the stop nor the target close at the time limit with an intermediate result. These time-outs keep the mean return positive at high targets, so the model uses each target's full empirical distribution of outcomes rather than a two-outcome win/loss approximation.
