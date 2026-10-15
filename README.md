@@ -16,9 +16,9 @@ A prop firm (not the investment entity) sells a type of product called funded ev
 
 ### The Problem
 
-Trading prop firms is a repeating cycle. A trader pays a fee for an evaluation, which may or may not pass. Each pass buys a funded account, which pays out until it breaches, and then the cycle starts again. The evaluation behaves like an option contract: the fee is the most that can be lost, and the funded account is the payoff. Whether the cycle generate positive expectancy depends on two things: what each funded account costs in evaluation fees and time, and how many payouts it delivers before it breaches.
+Trading prop firms is a repeating cycle. A trader pays a fee for an evaluation, which may or may not pass. Each pass buys a funded account, which pays out until it breaches, and then the cycle starts again. The evaluation behaves like an option contract: the fee is the most that can be lost, and the funded account is the payoff. Whether the cycle generates positive expectancy depends on two things: what each funded account costs in evaluation fees and time, and how many payouts it delivers before it breaches.
 
-We can also treat funded account as a race between two barriers. Below it sits a floor that trails the account's highest balance, so every gain also raises the level that ends the account. Above it sits the lock, where the floor freezes, and beyond that the payout. Before every trade, the trader picks a reward-to-risk target (RR) and a size. A small target wins often but slowly; a large one wins rarely but can clear the lock in one trade. With a small edge, the best choice depends on the account's room above the floor and its distance to the next milestone.
+We can also treat a funded account as a race between two barriers. Below it sits a floor that trails the account's highest balance, so every gain also raises the level that ends the account. Above it sits the lock, where the floor freezes, and beyond that the payout. Before every trade, the trader picks a reward-to-risk target (RR) and a size. A small target wins often but slowly; a large one wins rarely but can clear the lock in one trade. With a small edge, the best choice depends on the account's room above the floor and its distance to the next milestone.
 
 Prop firms are usually treated as a test of discretionary trading skill by retail trading enthusiasts. This project treats the funded account as a first-passage problem with path-dependent barriers: the state is the balance and peak, the action is the RR, and the objective is the probability of a payout before the floor. Its solution, combined with the evaluation's fee, pass rate, and duration, prices the full cycle. 
 
@@ -46,3 +46,19 @@ Each trade has a fixed 25-point stop, which defines one unit of risk (1R). It ex
 The rule was selected from roughly 25 candidate designs tested on NQ, including mean-reversion, opening-range, VWAP, gap and volatility-breakout rules. It was the only one whose mean return slightly exceeded a zero-edge benchmark at a usable trade frequency. The estimates are therefore subject to selection bias. Because the strategy has not been tested across market regimes, it is treated here as a realistic input distribution, with no expectation that its returns persist.
 
 Trades that reach neither the stop nor the target close at the time limit with an intermediate result. These time-outs keep the mean return positive at high targets, so the model uses each target's full empirical distribution of outcomes rather than a two-outcome win/loss approximation.
+
+## Model 
+### Markov Decision Process
+
+| Part | Definition |
+|---|---|
+| States | Post-lock: balance $x$. Pre-lock: peak $m$ and drawdown below it $y$. |
+| Actions | RR target for the next trade, 1.0 to 5.0. |
+| Transitions | Each RR's trade outcomes and their frequencies from the ledger. Balances sit on a grid, and a landing between points is split between neighbors by distance. |
+| Reward | 1 at the payout, 0 at a breach. A state's value is the probability of being paid. |
+| Discount | None. |
+
+The pre-lock state needs the peak because two accounts at the same balance with different peaks have different floors, hence will have different expectancy. 
+
+### Bellman Equation 
+
