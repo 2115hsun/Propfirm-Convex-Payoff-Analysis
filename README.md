@@ -57,7 +57,16 @@ A token on a ladder of dollar states {0, 1, 2, 3, 4}. State 0 and 4 are absorbin
 - Tight risk: +1 with probability of 0.7, -1 with probability of 0.3
 - Wide risk: +2 with probability of 0.4, -1 with probability of 0.6
 
-A win is designated by reaching 4; and a loss is at 0 (This is essentially the funded account in miniature: 0 = breach, 4 = getting payout, Tight/Wide = low/high risk to reward). We can now draw similarity to the prop firm setting:
+A win is designated by reaching 4; and a loss is at 0 (This is essentially the funded account in miniature: 0 = breach, 4 = getting payout, Tight/Wide = low/high risk to reward). 
+
+"A MDP is formally a five-tuple $$(S, A, P, R, \\gamma)$$\n",
+    "- $S$: The set of states\n",
+    "- $A$: The set of actions\n",
+    "- ${P(s' | s, a)}$: Transition kernel: Probability of landing in $s$ given you are in $s$ and take $a$\n",
+    "- $R(s,a)$: Reward\n",
+    "- $ \\gamma$: Discount factor"
+
+We can now draw similarity to the prop firm setting:
 
 | Part | Definition |
 |---|---|
