@@ -50,6 +50,15 @@ Trades that reach neither the stop nor the target close at the time limit with a
 ## Model 
 ### Markov Decision Process
 
+We will be using Markov Decision Process (MDP) as the core framework for modelling sequential decision-making in this project. To better understand how formal MDP is applied in the prop firm setting, we will look at a toy scenario. 
+
+A token on a ladder of dollar states {0, 1, 2, 3, 4}. State 0 and 4 are absorbing (game over --> win or lose). From any interior state we pick one of two actions each round: 
+
+- Tight risk: +1 with probability of 0.7, -1 with probability of 0.3
+- Wide risk: +2 with probability of 0.4, -1 with probability of 0.6
+
+A win is designated by reaching 4; and a loss is at 0 (This is essentially the funded account in miniature: 0 = breach, 4 = getting payout, Tight/Wide = low/high risk to reward). We can now draw similarity to the prop firm setting:
+
 | Part | Definition |
 |---|---|
 | States | Post-lock: balance $x$. Pre-lock: peak $m$ and drawdown below it $y$. |
