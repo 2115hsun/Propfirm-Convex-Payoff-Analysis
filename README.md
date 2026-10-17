@@ -1,24 +1,24 @@
 ## Prop firm funded accounts as a stochastic control problem 
 
-This project asks how to trade a prop firm funded account to get paid as often as possible, and whether buying evaluations and collecting payouts generates wealth overall. It models the funded account as a Markov decision process with absorbing barriers, solves it by backward induction on real trade data, and checks the results out of sample. 
+This project asks how to trade a prop firm funded account to maximize the probability of a payout, and, as a secondary question, whether the cycle of buying evaluations and collecting payouts has positive expected value. It models the funded account as a Markov decision process with absorbing barriers, solves it by backward induction on real trade data, and checks the results out of sample.
 
-The trading strategy is only an input to the model. The contribution is the method, which is the key for this modeling effort: classifying a firm's rules as states and boundaries, finding the best action in every state, measuring how long it takes, and pricing the full cycle. 
+The trading strategy supplies the trade outcomes and could be replaced by another. The contribution is the method: encoding a firm's rules as states and boundaries, finding the best action in every state, measuring how long it takes, and pricing the full cycle.
 
 ### Introduction to Prop Firms 
 
-A prop firm (not the investment entity) sells a type of product called funded evaluation. A retail trader pays roughly $50 to $200 to trade a simulated futures account of $X value (i.e. Topstep Trader's $50,000 account) under fixed rules (i.e. max losses is $2,000, maximum profit per day cannot exceed 50% of total profit target, etc). If you reach the profit target without breaking the loss limit, you get a funded account and can attempt to generate positive P&L under similar set of rules and keep about 90% of what you withdraw. 
-| Rule | Effect |
+A prop firm (not the investment entity) sells a type of product called funded evaluation. A retail trader pays roughly $50 to $200 to trade a simulated futures account of $X value (i.e. Topstep Trader's $50,000 account) under fixed rules (i.e. max loss is $2,000, maximum profit per day cannot exceed 50% of total profit target, etc). If you reach the profit target without breaking the loss limit, you get a funded account and can attempt to generate positive P&L under a similar set of rules and keep about 90% of what you withdraw. 
+| Rule/Terminology | Effect |
 |---|---|
 | Trailing drawdown | The account closes if the balance falls a fixed amount (e.g. \$1,000 on a 25K) below its highest end-of-day balance. The floor rises with the peak and never falls. |
-| Lock | Once the peak is high enough, the floor stops trailing and freezes (e.g. at \$25,100). |
+| Lock | Once the peak is high enough in the funded stage, the floor stops trailing and freezes (e.g. account balance achieves \$26,100 and trailing stops at \$25,100 on a 25K account). |
 | Payouts | Withdrawals need a minimum profit and a number of profitable days, and are capped in size. |
-| Payout limit | Some firms allow a fixed number of payouts per account before moving it to a live account. |
+| Payout limit | Some firms allow a fixed number of payouts per account before moving it to a "live brokerage account". |
 
 ### The Problem
 
 Trading prop firms is a repeating cycle. A trader pays a fee for an evaluation, which may or may not pass. Each pass buys a funded account, which pays out until it breaches, and then the cycle starts again. The evaluation behaves like an option contract: the fee is the most that can be lost, and the funded account is the payoff. Whether the cycle generates positive expectancy depends on two things: what each funded account costs in evaluation fees and time, and how many payouts it delivers before it breaches.
 
-We can also treat a funded account as a race between two barriers. Below it sits a floor that trails the account's highest balance, so every gain also raises the level that ends the account. Above it sits the lock, where the floor freezes, and beyond that the payout. Before every trade, the trader picks a reward-to-risk target (RR) and a size. A small target wins often but slowly; a large one wins rarely but can clear the lock in one trade. With a small edge, the best choice depends on the account's room above the floor and its distance to the next milestone.
+We can also treat a funded account as a race between two barriers. Below it sits a **floor** that trails the account's highest balance, so every gain also raises the level that ends the account. Above it sits the **lock**, where the floor freezes, and beyond that the payout. Before every trade, the trader picks a reward-to-risk target (RR) and a size. A small target wins often but slowly; a large one wins rarely but can clear the lock in one trade. With a small edge, the best choice depends on the account's room above the floor and its distance to the next milestone.
 
 Prop firms are usually treated as a test of discretionary trading skill by retail trading enthusiasts. This project treats the funded account as a first-passage problem with path-dependent barriers: the state is the balance and peak, the action is the RR, and the objective is the probability of a payout before the floor. Its solution, combined with the evaluation's fee, pass rate, and duration, prices the full cycle. 
 
@@ -43,40 +43,50 @@ Each trade has a fixed 25-point stop, which defines one unit of risk (1R). It ex
 | Win rate | 52.6% | 47.2% | 42.3% | 33.7% | 29.2% | 25.5% | 22.6% | 20.4% | 18.0% | 15.0% |
 | Mean return (R/trade) | +0.055 | +0.065 | +0.062 | +0.027 | +0.054 | +0.074 | +0.092 | +0.125 | +0.133 | +0.106 |
 
-The rule was selected from roughly 25 candidate designs tested on NQ, including mean-reversion, opening-range, VWAP, gap and volatility-breakout rules. It was the only one whose mean return slightly exceeded a zero-edge benchmark at a usable trade frequency. The estimates are therefore subject to selection bias. Because the strategy has not been tested across market regimes, it is treated here as a realistic input distribution, with no expectation that its returns persist.
+The rule was selected from roughly 25 candidate designs tested on NQ, including mean-reversion, opening-range, VWAP, gap and volatility-breakout rules. It was the only one whose mean return slightly exceeded a zero-edge benchmark at a usable trade frequency. The estimates are therefore subject to selection bias. Because the strategy has not been tested across market regimes, it is treated here as a realistic input distribution, with no expectation that its returns persist. **(Note: The focus of this project is intended to be less on the strategy selection and more on modelling the process)**.
 
 Trades that reach neither the stop nor the target close at the time limit with an intermediate result. These time-outs keep the mean return positive at high targets, so the model uses each target's full empirical distribution of outcomes rather than a two-outcome win/loss approximation.
 
-## Model 
-### Markov Decision Process
+## Model
 
-We will be using Markov Decision Process (MDP) as the core framework for modelling sequential decision-making in this project. To better understand how formal MDP is applied in the prop firm setting, we will look at a toy scenario. 
+### Markov decision process
 
-A token on a ladder of dollar states {0, 1, 2, 3, 4}. State 0 and 4 are absorbing (game over --> win or lose). From any interior state we pick one of two actions each round: 
+A Markov decision process (MDP) is a tuple $(S, A, P, R, \gamma)$: states, actions, a transition kernel $P(s' \mid s, a)$ giving the probability of moving to $s'$ from $s$ under action $a$, rewards, and a discount factor.
 
-- Tight risk: +1 with probability of 0.7, -1 with probability of 0.3
-- Wide risk: +2 with probability of 0.4, -1 with probability of 0.6
+A toy version shows the structure. A token sits on states $\{0, 1, 2, 3, 4\}$, where 0 (breach) and 4 (payout) are absorbing. In each interior state the player chooses a tight action (+1 with probability 0.7, −1 with 0.3) or a wide action (+2 with probability 0.4, −1 with 0.6). The funded account shares the same shape at a larger scale:
 
-A win is designated by reaching 4; and a loss is at 0 (This is essentially the funded account in miniature: 0 = breach, 4 = getting payout, Tight/Wide = low/high risk to reward). 
-
-"A MDP is formally a five-tuple $$(S, A, P, R, \\gamma)$$\n",
-    "- $S$: The set of states\n",
-    "- $A$: The set of actions\n",
-    "- ${P(s' | s, a)}$: Transition kernel: Probability of landing in $s$ given you are in $s$ and take $a$\n",
-    "- $R(s,a)$: Reward\n",
-    "- $ \\gamma$: Discount factor"
-
-We can now draw similarity to the prop firm setting:
-
-| Part | Definition |
+| Part | Funded account |
 |---|---|
-| States | Post-lock: balance $x$. Pre-lock: peak $m$ and drawdown below it $y$. |
-| Actions | RR target for the next trade, 1.0 to 5.0. |
-| Transitions | Each RR's trade outcomes and their frequencies from the ledger. Balances sit on a grid, and a landing between points is split between neighbors by distance. |
-| Reward | 1 at the payout, 0 at a breach. A state's value is the probability of being paid. |
-| Discount | None. |
+| States | Post-lock: balance $x$. Pre-lock: peak $m$ and drawdown $y$ below it. |
+| Actions | RR target for the next trade, 1.0 to 5.0 |
+| Transitions | Empirical trade outcomes at each RR; landings between grid points are split between neighbors by distance |
+| Reward | 1 at the payout, 0 at a breach, so a state's value is its probability of being paid |
+| Discount | None ($\gamma = 1$) |
 
-The pre-lock state needs the peak because two accounts at the same balance with different peaks have different floors, hence will have different expectancy. 
+### Markov property
 
-### Bellman Equation 
+The process is Markov if the next state depends only on the current state and action:
+
+$$\Pr(s_{t+1} \mid s_t, \dots, s_0, a_t) = \Pr(s_{t+1} \mid s_t, a_t).$$
+
+Balance alone fails this test. 
+
+Before the lock, the floor is $m - D$, where $m = \max_{\tau \le t} x_\tau$ is the running peak and $D$ is the drawdown limit, so two accounts at the same balance can have different floors. Adding the peak to the state restores the property: pre-lock states are $(m, y)$ with $y = m - x$. After the lock, the floor is fixed and balance alone suffices. Lock status is handled by solving the two stages separately, and the number of payouts taken is tracked in the lifecycle economics rather than in the state.
+
+
+### Bellman equation 
+
+The value of a state under a policy $\pi$ is its expected total discounted reward:
+
+$$V^\pi(s) = \mathbb{E}\big[\, R_0 + \gamma R_1 + \gamma^2 R_2 + \cdots \,\big]$$
+
+Splitting off the first reward, the remainder $\gamma(R_1 + \gamma R_2 + \cdots)$ is $\gamma$ times the value of whichever state $s'$ the first step lands in. Because $s'$ is random, it is averaged over the transition kernel:
+
+$$V^\pi(s) = R(s, \pi(s)) + \gamma \sum_{s'} P\big(s' \mid s, \pi(s)\big)\, V^\pi(s').$$
+
+Choosing the best action in each state gives the Bellman optimality equation. In this model, rewards arrive only at the barriers after we either breach or achieve payout goal and $\gamma = 1$, so it reduces to
+
+$$V(s) = \max_{RR} \sum_{s'} P(s' \mid s, RR)\, V(s'), \qquad V = 1 \text{ at the payout}, \quad V = 0 \text{ at a breach}.$$
+
+The value of a state is the best available average of the values one trade away. It is solved by value iteration: start from zero, apply the equation to every state, and repeat until the values stop changing.
 
