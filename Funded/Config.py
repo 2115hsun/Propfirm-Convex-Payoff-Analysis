@@ -1,6 +1,7 @@
 """Config.py — prop-firm plan rules. Dollar levels are measured from the start balance.
 Rules checked October 2026; confirm in each firm's dashboard before relying on them."""
 import os
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 from dataclasses import dataclass
 
 
@@ -66,6 +67,6 @@ PLANS = {
 }
 
 PLAN_KEY = os.environ.get("PLAN", "lucid25flex")
-if PLAN_KEY in PLANS:
-    raise SystemExit(f"Unkown PLAN '{PLAN_KEY}'. Choose one of: {', '.join(PLANS)}")
+if PLAN_KEY not in PLANS:
+    raise SystemExit(f"Unknown PLAN '{PLAN_KEY}'. Choose one of: {', '.join(PLANS)}")
 PLAN = PLANS[PLAN_KEY]

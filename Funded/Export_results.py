@@ -1,4 +1,4 @@
-"""export_results.py — write the risk sweep and the policy tables to funded_results.json for the dashboard.
+"""export_results.py — write the risk sweep and the policy tables to funded_results_{results['meta']['plan_key']}_{tag}.jsonfor the dashboard.
 Run from the Funded folder:  python export_results.py
 """
 import json
@@ -7,7 +7,7 @@ import Postlock as post
 import Prelock as pre
 import Lifecycle as life
 import Sweep
-from Config import PLAN
+from Config import PLAN, PLAN_KEY
 import os
 
 step  = 50 if PLAN.dd_limit <= 2_000 else 150          # keep the sweep to about 20-40 levels
@@ -30,7 +30,7 @@ for r in RISKS:
 
 results = dict(
     meta=dict(stop_points=25, trades=len(post.RETURN_ARRAYS[1.0]),
-              plan_key=os.environ.get("PLAN", "topstep50"),
+              plan_key=PLAN_KEY,
               plan=PLAN.__dict__, use_mae=post.USE_MAE),
     eval=dict(fee=life.Eval_fee, activation=life.Activation_fee, pass_rate=life.Eval_pass_rate,
               days_pass=life.Days_pass, days_fail=life.Days_fail),

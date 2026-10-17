@@ -1,6 +1,6 @@
 from math import floor
-from Config import PLAN
-
+from Config import DATA_DIR, PLAN
+import os 
 import numpy as np
 import pickle
 
@@ -8,20 +8,22 @@ Floor  = PLAN.locked_floor      # frozen floor after the lock
 Target = PLAN.payout_target     # payout level
 Entry  = PLAN.lock_peak         # balance when the account locks
 Dx     = PLAN.dx
-USE_MAE = True
+USE_MAE = os.environ.get("USE_MAE", "0") == "1"
 
-try:
-    with open("mae.pkl", "rb") as f:
-        MAE = pickle.load(f)
-except FileNotFoundError:
-    MAE = None 
+MAE = None
+if USE_MAE:
+    try:
+        with open(os.path.join(DATA_DIR, "mae.pkl"), "rb") as f:
+            MAE = pickle.load(f)
+    except FileNotFoundError:
+        raise SystemExit("USE_MAE=1 but mae.pkl is missing. Run Export_ledger.py first.")
 
 grid = np.arange(Floor+Dx, Target, Dx)  # [50, 100, ..., 1950]
 
 V_floor = 0.0
 V_target = 1.0
 
-with open("ledgers.pkl", "rb") as f:
+with open(os.path.join(DATA_DIR, "ledgers.pkl"), "rb") as f:
     RETURN_ARRAYS = pickle.load(f)
 
 risk = PLAN.risk
