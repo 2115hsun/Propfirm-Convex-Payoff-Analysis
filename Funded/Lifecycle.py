@@ -21,16 +21,11 @@ def eval_stage(fee, pass_rate, days_pass, days_fail, activation=Activation_fee):
 
     return cost, days 
 
-if __name__ == "__main__":
-    cost, days = eval_stage(Eval_fee, Eval_pass_rate, Days_pass, Days_fail)
-    print(f"per funded account: ${cost:.0f} in evals over {days:.1f} trading days")
-
 # ==========================================================================================
 # Funded Lifecycle Calc
 # ==========================================================================================
 
 Payout = PLAN.payout 
-Split = 0.9
 Trades_per_day = 1
 
 def funded_stage(q, p, trades_first, trades_cycle, payout, split, trades_per_day, max_payouts=None):
@@ -47,7 +42,6 @@ def funded_stage(q, p, trades_first, trades_cycle, payout, split, trades_per_day
     days   = trades / trades_per_day
     return payouts, cash, days
 
-
 # ==========================================================================================
 # Cycle Economics 
 # ==========================================================================================
@@ -62,3 +56,7 @@ def cycle_economics(eval_cost, eval_days, cash, funded_days, n_slots):
     roi = net / eval_cost 
     return net, days, per_day, fleet, roi 
 
+
+if __name__ == "__main__":
+    cost, days = eval_stage(Eval_fee, Eval_pass_rate, Days_pass, Days_fail)
+    print(f"per funded account: ${cost:.0f} in evals over {days:.1f} trading days")

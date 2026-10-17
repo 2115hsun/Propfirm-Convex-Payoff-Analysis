@@ -34,6 +34,9 @@ class Plan:
         rounded to a whole number of MNQ contracts ($50 per contract at a 25-point stop)."""
         return 50 * round(self.dd_limit / 4 / 50)
 
+# =========================================================================================
+# Prop-firm plan rules 
+# =========================================================================================
 
 PLANS = {
     "lucid25flex": Plan("Lucid 25K Flex", start=25_000, dd_limit=1_000, lock_peak=1_100,
@@ -43,10 +46,10 @@ PLANS = {
     "lucid50flex": Plan("Lucid 50K Flex", start=50_000, dd_limit=2_000, lock_peak=2_100,
         locked_floor=100, payout_target=4_100, payout_pct=0.5, payout_cap=2_000, split=0.90,
         eval_fee=140, activation_fee=0, max_payouts=5, min_day_profit=150, days_required=5,
-        consistency=None, dx=100),
+    consistency=None, dx=100),
     "apex25eod": Plan("Apex 25K EOD", start=25_000, dd_limit=1_000, lock_peak=1_100,
-        locked_floor=100, payout_target=2_100, payout_pct=0.5, payout_cap=1_000, split=1.00,   # VERIFY cap, split
-        eval_fee=199, activation_fee=99, max_payouts=6, min_day_profit=100, days_required=5,     # VERIFY eval_fee
+        locked_floor=100, payout_target=2_100, payout_pct=0.5, payout_cap=1_000, split=1.00,   
+        eval_fee=199, activation_fee=99, max_payouts=6, min_day_profit=100, days_required=5,     
         consistency=0.50),
     "topstep50": Plan("Topstep 50K", start=50_000, dd_limit=2_000, lock_peak=2_000,
         locked_floor=0, payout_target=4_000, payout_pct=0.5, payout_cap=2_000, split=0.90,
@@ -62,4 +65,7 @@ PLANS = {
         consistency=None, dx=100),
 }
 
-PLAN = PLANS[os.environ.get("PLAN", "lucid25flex")]
+PLAN_KEY = os.environ.get("PLAN", "lucid25flex")
+if PLAN_KEY in PLANS:
+    raise SystemExit(f"Unkown PLAN '{PLAN_KEY}'. Choose one of: {', '.join(PLANS)}")
+PLAN = PLANS[PLAN_KEY]
