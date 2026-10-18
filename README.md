@@ -108,7 +108,7 @@ The two stages are solved in reverse order, because the value of reaching the lo
 
 ### 4) Pre-lock stage
 
-Before the lock, the floor trails the peak, so the state needs two numbers: the peak $m$ and the drawdown below it, $y$. A trade ends in one of four ways: a breach ($y$ reaches \$1,000), a lock (the peak reaches \$1,100), a new peak ($y$ resets to 0), or a new drawdown under the same peak. A trade that locks at balance $x'$ is worth the post-lock value $V_{\text{post}}(x')$, so a lock that overshoots with extra cushion is worth more than one at exactly \$26,100. At \$250 per trade, a fresh funded account reaches its first payout with probability 0.373.
+Before the lock, the floor trails the peak, so the state needs two numbers: the peak $m$ and the drawdown below it, $y$. A trade ends in one of four ways: a breach ($y$ reaches \$1,000), a lock (the peak reaches \$1,100), a new peak ($y$ resets to 0), or a new drawdown under the same peak. A trade that locks at balance $x'$ is worth the post-lock value $V_{\text{post}}(x')$, so a lock that overshoots with extra cushion is worth more than one at exactly \$26,100. At \$250 per trade, a fresh funded account reaches its first payout with probability 0.344.
 
 ### 5) From model to results
 
@@ -140,20 +140,20 @@ The optimal policy changes RR with the account's state. To check that this is no
 
 | Built on | Scored on | Optimal policy | Always RR 1.0 | Always RR 5.0 |
 |---|---|---|---|---|
-| First half | Second half | 0.351 | 0.298 | 0.291 |
-| Second half | First half | 0.390 | 0.301 | 0.335 |
+| First half | Second half | 0.316 | 0.282 | 0.280 |
+| Second half | First half | 0.360 | 0.288 | 0.323 |
 
-Choosing RR by state raises the first-payout probability by about 5 percentage points over the best fixed rule in both directions, so the gain does not depend on one split. A larger sample is needed to confirm it.
+Choosing RR by state raises the first-payout probability by about 3.5 percentage points over the best fixed rule in both directions (3.4 and 3.7), so the gain does not depend on one split. A larger sample is needed to confirm it.
 
 ## Results
 
-All figures use the Lucid 25K Flex rules at \$250 per trade and closing prices unless stated.
+All figures use the Lucid 25K Flex rules at \$250 per trade, closing prices, and count a dip to the floor during a trade as a breach, unless stated.
 
-**Payout probabilities.** A fresh funded account reaches its first payout with probability 0.344. It locks with probability 0.494, and a locked account is paid with probability 0.715, higher than the 0.606 of an account sitting exactly at the lock level because many locks overshoot with extra cushion. With Lucid's limit of five payouts, a funded account delivers about 0.92 payouts on average.
+**Payout probabilities.** A fresh funded account reaches its first payout with probability 0.344. It locks with probability 0.494, and a locked account is paid with probability 0.696, higher than the 0.606 of an account sitting exactly at the lock level because many locks overshoot with extra cushion. With Lucid's limit of five payouts, a funded account delivers about 0.92 payouts on average.
 
-**When choosing RR by state helps.** The out-of-sample gain depends on how large each trade is relative to the drawdown. With four full losses of room (Lucid 25K at \$250, or 50K at \$500), the gain is about +5 points in both directions. With eight losses of room (50K at \$250), it is −4.3 points in one direction and +3.8 in the other. When risk is a large share of the drawdown, a single trade can decide whether the account locks, and the optimal policy exploits this; with more room, a fixed target does about as well.
+**When choosing RR by state helps.** The out-of-sample gain depends on how large each trade is relative to the drawdown. With four full losses of room (Lucid 25K at \$250, or 50K at \$500), the gain is about +3.5 points in both directions. With eight losses of room (50K at \$250), it is −4.3 points in one direction and +3.8 in the other. When risk is a large share of the drawdown, a single trade can decide whether the account locks, and the optimal policy exploits this; with more room, a fixed target does about as well.
 
-**Intra-trade breaches.** Counting dips to the floor during a trade, measured up to each target's actual exit, lowers the 50K first-payout probability at \$500 from 0.385 to 0.354. The out-of-sample gain from choosing RR by state falls to about +3 to +4 points but stays positive in both directions.
+**Intra-trade breaches.** Counting dips to the floor during a trade, measured up to each target's actual exit, lowers the 25K first-payout probability at \$250 from 0.373 to 0.344, and the 50K at \$500 from 0.385 to 0.354. The out-of-sample gain from choosing RR by state falls from about +5 points to about +3.5 but stays positive in both directions.
 
 **Thresholds in position size.** The number of full losses to breach is the drawdown divided by the risk per trade, rounded up, so performance drops each time risk crosses the drawdown divided by an integer. On a \$1,000 drawdown, \$450 per trade survives three losses and \$500 survives two.
 
