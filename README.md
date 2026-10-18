@@ -106,9 +106,15 @@ The value of a state is the best available average of the values one trade away.
 
 The two stages are solved in reverse order, because the value of reaching the lock depends on what happens after it. Once a Lucid 25K account locks, the floor is fixed at \$25,100 and the state is the balance $x$ alone. Its value $V(x)$ is the probability of reaching \$27,100 before \$25,100, given by the equation above with $V = 1$ at the payout and $V = 0$ at the floor. The balance is kept on a \$50 grid. At \$250 per trade (5 Micro Nasdaq contracts), an account that has just locked reaches the payout with probability 0.606.
 
+![Post-lock payout probability against balance at $250 per trade](figures/postlock_value.png)
+
 ### 4) Pre-lock stage
 
 Before the lock, the floor trails the peak, so the state needs two numbers: the peak $m$ and the drawdown below it, $y$. A trade ends in one of four ways: a breach ($y$ reaches \$1,000), a lock (the peak reaches \$1,100), a new peak ($y$ resets to 0), or a new drawdown under the same peak. A trade that locks at balance $x'$ is worth the post-lock value $V_{\text{post}}(x')$, so a lock that overshoots with extra cushion is worth more than one at exactly \$26,100. At \$250 per trade, a fresh funded account reaches its first payout with probability 0.344.
+
+![Best RR target in each pre-lock state at $250 per trade](figures/policy_map.png)
+
+![Probability of a first payout from each pre-lock state at $250 per trade](figures/value_map.png)
 
 ### 5) From model to results
 
@@ -158,6 +164,8 @@ All figures use the Lucid 25K Flex rules at \$250 per trade, closing prices, and
 **Thresholds in position size.** The number of full losses to breach is the drawdown divided by the risk per trade, rounded up, so performance drops each time risk crosses the drawdown divided by an integer. On a \$1,000 drawdown, \$450 per trade survives three losses and \$500 survives two.
 
 **Probability against time.** Smaller risk raises every payout probability but lengthens every cycle; larger risk does the reverse. Net value per unit of time rises with size over the range examined, which makes this result sensitive to the rules not yet modeled. Results above about 70% of the drawdown depend on how the trade size aligns with the grid and the rule levels, and are treated as provisional.
+
+![First-payout probability and expected trades by risk per trade](figures/risk_sweep.png)
 
 **Independence of outcomes.** Against 5,000 random reorderings, the trade sequence shows no excess clustering of losses at the trade or day level. The largest single event, 13 consecutive losing trades on April 23 and 24, 2026, did not recur. This supports treating trades and days as independent draws, within the limits of a 161-day sample.
 
