@@ -47,7 +47,6 @@ if __name__ == "__main__":
             for _, s2 in branches:
                 assert s2 in States, f"illegal landing {s2} at ({s},{a})"
     print("\nAll kernels valid: probabilities sum to 1, all landings are real states.")
-    # the specific fix: state 3 Wide should now clamp 5 -> 4
-    print("\nState-3 Wide (was landing on illegal '5'):", transitions(3, "Wide"))
+
  
 
