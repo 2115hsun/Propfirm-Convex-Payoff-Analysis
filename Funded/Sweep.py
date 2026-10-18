@@ -3,6 +3,11 @@ import pandas as pd
 import Postlock as post
 import Prelock as pre
 import Lifecycle as life
+from Config import PLAN 
+
+def default_risks(plan=PLAN):
+    step = 50 if plan.dd_limit <= 2_000 else 150
+    return list(range(100, int(plan.dd_limit) + 1, step))
 
 
 def run_sweep(risks, coins=None):

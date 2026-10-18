@@ -11,8 +11,7 @@ from Config import PLAN, PLAN_KEY
 import os
 
 step  = 50 if PLAN.dd_limit <= 2_000 else 150          # keep the sweep to about 20-40 levels
-RISKS = list(range(100, int(PLAN.dd_limit) + 1, step)) # up to one loss = the whole drawdown        # $ per R, 2 to 20 MNQ at a 25-point stop
-
+RISKS = Sweep.default_risks()
 print(f"running the sweep over {len(RISKS)} risk levels...")
 sweep = Sweep.run_sweep(RISKS)
 

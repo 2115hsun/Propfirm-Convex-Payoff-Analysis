@@ -138,6 +138,11 @@ def build_matrices(coins, risk, V_post, lock_one=False, at_target=1.0):
         rs.append(r)
     return Ps, rs
 
+def q_values(coins, V_post, V_pre, risk=risk):
+    Ps, rs = build_matrices(coins, risk, V_post)
+    v = V_pre.ravel()
+    return np.stack ([r + P @ v for P, r in zip(Ps, rs)]).reshape(len(coins), len(m_grid), ny)
+
 def solve_pre_fast(coins, V_post, risk=risk, lock_one=False, tol=1e-10, max_sweeps=100_000):
     """
     Value iteration with a max over RR, using matrices.

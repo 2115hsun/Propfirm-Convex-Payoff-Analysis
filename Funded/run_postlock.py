@@ -20,10 +20,11 @@ V_star, policy = solve(Coins, V_init, Floor, Target, Dx, risk)
 # show the value function and optimal RR at a few cushion levels
 print("\ncell   equity   V*(prob reach target)   optimal RR")
 for i in range(0, len(grid), 5):      # every 5th cell
-    print(f"  {i:2d}   ${grid[i]:>6.0f}        {V_star[i]:.4f}              {policy[i]}")
+    print(f"  {i:2d}   ${grid[i]:>6.0f} {V_star[i]:.4f} {policy[i]}")
 
 #====================================================================================
-
+# Expected trades from the lock entry
+# ===================================================================================
 print("cell  equity   bestRR  bestV   2ndRR  2ndV   gap")
 for i in range(len(grid)):
     qs = sorted([(bellman_backup(i, Coins[rho], V_star, Floor, Target, Dx, risk), rho)
@@ -31,24 +32,21 @@ for i in range(len(grid)):
     (v1,rr1),(v2,rr2) = qs[0], qs[1]
     print(f"  {i:2d}  ${grid[i]:>6.0f}   {rr1:<5} {v1:.4f}  {rr2:<5} {v2:.4f}  {v1-v2:.4f}")
 
-#====================================================================================
-
 d = transition(Entry, Coins[1.5], Floor, Target, Dx, risk)
 print("total prob:", sum(d.values()))
 
-i_entry = cell_index(Entry, Floor, Dx)          # = 19
+i_entry = cell_index(Entry, Floor, Dx)          
 print(f"P(reach ${PLAN.start + Target:,.0f} before ${PLAN.start + Floor:,.0f} | "
       f"locked at ${PLAN.start + Entry:,.0f}) = {V_star[i_entry]:.4f}  best RR {policy[i_entry]}")
 
 assert all(p >= 0 for p in d.values()), f"negative probability: {d}"
 
-V_250, _ = solve_post(Coins, 250)
-V_150, _ = solve_post(Coins, 150)
-i = cell_index(Entry, Floor, Dx)
-print(f"\nsolve_post at $250: {V_250[i]:.4f}   (must match 0.6401)")
-print(f"solve_post at $150: {V_150[i]:.4f}   (new: post-lock at 3 MNQ)")
+print(f"\nP(payout | lock entry) at ${risk}: {V_star[i_entry]:.4f} (compare with Baselines.md)")
 
-# Time layer check: a fair coin with one-cell steps has an exact answer.
+# ===================================================================================
+# Time layer check 
+# ===================================================================================
+# A fair coin with one-cell steps has an exact answer.
 fair = {1.0: [(0.5, 1.0), (0.5, -1.0)]}
 fair_policy = {i: 1.0 for i in range(len(grid))}
 T_fair = expected_trades_post(fair, fair_policy, risk=Dx)
