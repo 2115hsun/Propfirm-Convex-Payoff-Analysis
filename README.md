@@ -152,7 +152,7 @@ The optimal policy changes RR with the account's state. To check that this is no
 | First half | Second half | 0.316 | 0.282 | 0.280 |
 | Second half | First half | 0.360 | 0.288 | 0.323 |
 
-Choosing RR by state raises the first-payout probability by about 3.5 percentage points over the best fixed rule in both directions (3.4 and 3.7), so the gain does not depend on one split. A larger sample is needed to confirm it.
+Choosing RR by state raises the first-payout probability by about 3.5 percentage points over the best fixed rule in both directions (3.2 and 3.6), so the gain does not depend on one split. A larger sample is needed to confirm it.
 
 ## Results
 
