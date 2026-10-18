@@ -104,11 +104,11 @@ The value of a state is the best available average of the values one trade away.
 
 ### 3) Post-lock stage
 
-The two stages are solved in reverse order, because the value of reaching the lock depends on what happens after it. Once a Lucid 25K account locks, the floor is fixed at \$25,100 and the state is the balance $x$ alone. Its value $V(x)$ is the probability of reaching \$27,100 before \$25,100, given by the equation above with $V = 1$ at the payout and $V = 0$ at the floor. The balance is kept on a \$50 grid. At \$250 per trade (5 Micro Nasdaq contracts), an account that has just locked reaches the payout with probability 0.640.
+The two stages are solved in reverse order, because the value of reaching the lock depends on what happens after it. Once a Lucid 25K account locks, the floor is fixed at \$25,100 and the state is the balance $x$ alone. Its value $V(x)$ is the probability of reaching \$27,100 before \$25,100, given by the equation above with $V = 1$ at the payout and $V = 0$ at the floor. The balance is kept on a \$50 grid. At \$250 per trade (5 Micro Nasdaq contracts), an account that has just locked reaches the payout with probability 0.606.
 
 ### 4) Pre-lock stage
 
-Before the lock, the floor trails the peak, so the state needs two numbers: the peak $m$ and the drawdown below it, $y$. A trade ends in one of four ways: a breach ($y$ reaches \$1,000), a lock (the peak reaches \$1,100), a new peak ($y$ resets to 0), or a new drawdown under the same peak. A trade that locks at balance $x'$ is worth the post-lock value $V_{\text{post}}(x')$, so a lock that overshoots with extra cushion is worth more than one at exactly \$26,100. At \$250 per trade, a fresh funded account reaches its first payout with probability 0.373.
+Before the lock, the floor trails the peak, so the state needs two numbers: the peak $m$ and the drawdown below it, $y$. A trade ends in one of four ways: a breach ($y$ reaches \$1,000), a lock (the peak reaches \$1,100), a new peak ($y$ resets to 0), or a new drawdown under the same peak. A trade that locks at balance $x'$ is worth the post-lock value $V_{\text{post}}(x')$, so a lock that overshoots with extra cushion is worth more than one at exactly \$26,100. At \$250 per trade, a fresh funded account reaches its first payout with probability 0.344.
 
 ### 5) From model to results
 
@@ -116,7 +116,7 @@ The two solves give the probability of a payout from any state. Three more steps
 
 **Time.** For the chosen policy, the expected number of trades until payout or breach satisfies $T(s) = 1 + \sum_{s'} P(s' \mid s)\, T(s')$, solved exactly as a linear system. At \$250 per trade, a fresh account takes about 19 trades to reach its first payout or breach, and each later payout cycle about 18.
 
-**Repeat payouts.** After a payout the account returns to the lock level, so each later payout succeeds with the same probability $p = 0.640$. With first-payout probability $q$ and a payout limit $K$, the expected number of payouts per funded account is
+**Repeat payouts.** After a payout the account returns to the lock level, so each later payout succeeds with the same probability $p = 0.606$. With first-payout probability $q$ and a payout limit $K$, the expected number of payouts per funded account is
 
 $$\text{payouts} = q\,\frac{1 - p^{K}}{1 - p}.$$
 
@@ -132,7 +132,7 @@ The dashboard reads these results from an exported file per plan. It shows the s
 
 Two fair-coin cases have exact answers. A coin that wins or loses one \$50 grid cell with probability ½ turns post-lock into the gambler's ruin problem: from the lock entry, 20 steps from both the floor and the payout, the expected number of trades is $20 \times 20 = 400$. Before the lock, each new high starts a race between one step up and twenty steps down, which the coin wins with probability $20/21$; locking requires 22 such wins, so $P(\text{lock}) = (20/21)^{22} = 0.341850$. The solver reproduces both values exactly, which verifies the state routing, the barriers and the time calculation.
 
-These cases move exactly one cell and count a lock as worth 1, so they do not test the interpolation between grid points or the hand-off to post-lock. Two further checks cover those: the fast matrix solver agrees with the original solver to about $10^{-16}$ in every state, and a 50K account at \$500 per trade, which has the same geometry in units of risk as a 25K at \$250, gives an identical post-lock payout probability (0.640).
+These cases move exactly one cell and count a lock as worth 1, so they do not test the interpolation between grid points or the hand-off to post-lock. Two further checks cover those: the fast matrix solver agrees with the original solver to about $10^{-16}$ in every state, and a 50K account at \$500 per trade, which has the same geometry in units of risk as a 25K at \$250, gives an identical post-lock payout probability (0.606).
 
 ### 2) Out-of-sample test
 
@@ -140,20 +140,20 @@ The optimal policy changes RR with the account's state. To check that this is no
 
 | Built on | Scored on | Optimal policy | Always RR 1.0 | Always RR 5.0 |
 |---|---|---|---|---|
-| First half | Second half | 0.351 | 0.298 | 0.291 |
-| Second half | First half | 0.390 | 0.301 | 0.335 |
+| First half | Second half | 0.316 | 0.282 | 0.280 |
+| Second half | First half | 0.360 | 0.288 | 0.323 |
 
-Choosing RR by state raises the first-payout probability by about 5 percentage points over the best fixed rule in both directions, so the gain does not depend on one split. A larger sample is needed to confirm it.
+Choosing RR by state raises the first-payout probability by about 3.5 percentage points over the best fixed rule in both directions (3.4 and 3.7), so the gain does not depend on one split. A larger sample is needed to confirm it.
 
 ## Results
 
-All figures use the Lucid 25K Flex rules at \$250 per trade and closing prices unless stated.
+All figures use the Lucid 25K Flex rules at \$250 per trade, closing prices, and count a dip to the floor during a trade as a breach, unless stated.
 
-**Payout probabilities.** A fresh funded account reaches its first payout with probability 0.373. It locks with probability 0.522, and a locked account is paid with probability 0.715, higher than the 0.640 of an account sitting exactly at the lock level because many locks overshoot with extra cushion. With Lucid's limit of five payouts, a funded account delivers about 0.92 payouts on average.
+**Payout probabilities.** A fresh funded account reaches its first payout with probability 0.344. It locks with probability 0.494, and a locked account is paid with probability 0.696, higher than the 0.606 of an account sitting exactly at the lock level because many locks overshoot with extra cushion. With Lucid's limit of five payouts, a funded account delivers about 0.92 payouts on average.
 
-**When choosing RR by state helps.** The out-of-sample gain depends on how large each trade is relative to the drawdown. With four full losses of room (Lucid 25K at \$250, or 50K at \$500), the gain is about +5 points in both directions. With eight losses of room (50K at \$250), it is −4.3 points in one direction and +3.8 in the other. When risk is a large share of the drawdown, a single trade can decide whether the account locks, and the optimal policy exploits this; with more room, a fixed target does about as well.
+**When choosing RR by state helps.** The out-of-sample gain depends on how large each trade is relative to the drawdown. With four full losses of room (Lucid 25K at \$250, or 50K at \$500), the gain is about +3.5 points in both directions. With eight losses of room (50K at \$250), it is −4.3 points in one direction and +3.8 in the other. When risk is a large share of the drawdown, a single trade can decide whether the account locks, and the optimal policy exploits this; with more room, a fixed target does about as well.
 
-**Intra-trade breaches.** Counting dips to the floor during a trade, measured up to each target's actual exit, lowers the 50K first-payout probability at \$500 from 0.385 to 0.354. The out-of-sample gain from choosing RR by state falls to about +3 to +4 points but stays positive in both directions.
+**Intra-trade breaches.** Counting dips to the floor during a trade, measured up to each target's actual exit, lowers the 25K first-payout probability at \$250 from 0.373 to 0.344, and the 50K at \$500 from 0.385 to 0.354. The out-of-sample gain from choosing RR by state falls from about +5 points to about +3.5 but stays positive in both directions.
 
 **Thresholds in position size.** The number of full losses to breach is the drawdown divided by the risk per trade, rounded up, so performance drops each time risk crosses the drawdown divided by an integer. On a \$1,000 drawdown, \$450 per trade survives three losses and \$500 survives two.
 
