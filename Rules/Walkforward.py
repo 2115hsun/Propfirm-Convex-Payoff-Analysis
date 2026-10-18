@@ -1,28 +1,24 @@
 """
-WalkForward.py -- segmented walk-forward validation for the POINTS-based 3-D
+Walkforward.py: rolling walk-forward validation of the points-based 3-D
 risk-geometry sweep, with the multi-account rotation measured per fold.
 
-What this fixes vs. the single IS/OOS split you have today:
-  * The parameter + geometry search is RE-RUN on each rolling TRAIN block and
-    LOCKED, then measured on the immediately-following TEST block it never saw.
-    Every test block contributes real OOS trades -> the pooled OOS record is
-    hundreds of trades instead of one 42-trade tail.
-  * Rolling (fixed-width) train, NOT anchored/expanding: a fixed-POINTS stop is
-    not regime-stationary across 2021->2026 (NQ 13k -> 25k), so each fold
-    re-selects the stop width appropriate to THAT regime's point-volatility.
-  * Winner is chosen by the FLOOR (p25) of each combo's own 3-D pass grid, not
-    the single argmax cell -- a broad-plateau edge, not a lucky spike.
-  * Each locked winner is measured on the test block BOTH single-account
-    (oos_check Monte Carlo) AND via the N-slot restart-on-breach rotation
-    (multi_account_replay) -- the rotation becomes one result per fold, pooled.
-  * A walk-forward PBO proxy: in each fold, rank the train-winner among the
-    Stage-B survivors scored on the TEST block. PBO = fraction of folds the
-    winner lands in the worse OOS half (Lopez de Prado's definition, per fold).
+  * The param + geometry search runs on each rolling train block, is locked,
+    then measured on the next test block. Pooling the test blocks gives
+    hundreds of out-of-sample trades instead of one short tail.
+  * Train windows are fixed width, not expanding. A fixed-points stop isn't
+    stable across 2021-2026 (NQ went from 13k to 25k), so each fold picks the
+    stop width for its own regime.
+  * The winner is the combo with the highest p25 over its own 3-D pass grid,
+    so a broad plateau beats a single lucky cell.
+  * Each locked winner is measured on the test block twice: single-account
+    (oos_check) and with the N-slot rotation (multi_account_replay).
+  * PBO proxy: each fold ranks the train winner among the Stage-B survivors
+    on the test block. PBO is the fraction of folds where the winner lands
+    in the worse half (Lopez de Prado's definition, per fold).
 
-Nothing here modifies Backtest_points / Analysis_points / MultiEval -- it
-orchestrates them. The caller supplies a `strategy_factory(**params)` that
-returns a ready-to-backtest strategy (already TimeWindow-wrapped), so this
-module stays agnostic about kernel_bos specifically.
+This module only orchestrates Backtest, Analysis and MultiEval. The caller
+passes `strategy_factory(**params)` returning a ready-to-backtest strategy
+(already time-window wrapped), so nothing here is tied to one strategy.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -48,9 +44,9 @@ class Fold:
 
 
 def make_folds(bars, train_months=6, test_months=1, step_months=1, embargo_days=1):
-    """Rolling (train, test) calendar folds over `bars`' span. Train is a
-    FIXED-width window ending `embargo_days` before test_start (purge); test is
-    the next `test_months`; the whole thing steps forward by `step_months`."""
+    """Rolling (train, test) calendar folds over the span of `bars`. Train is
+    a fixed-width window ending `embargo_days` before test_start; test is the
+    next `test_months`; folds step forward by `step_months`."""
     tz = bars.index.tz
     start = bars.index.min().normalize()
     end = bars.index.max().normalize()
@@ -102,8 +98,8 @@ def _stage_a(strategy_factory, bars_tr, param_grid, stage_a_stop, max_hold,
 
 
 def _combo_floor(g, max_days_to_pass):
-    """p25 of a combo's finite 3-D pass cells (within the days ceiling if any) --
-    the robust 'whole surface is high', not one lucky cell."""
+    """p25 of a combo's finite 3-D pass cells (within the days ceiling if
+    any), so the whole surface has to be high, not one cell."""
     pg = g["pass_grid"]
     dg = g.get("days_grid")
     m = np.isfinite(pg)
@@ -123,18 +119,18 @@ class FoldResult:
     stop_points: float = float("nan")
     rr: float = float("nan")
     risk_pct: float = float("nan")
-    train_pass_pct: float = float("nan")     # locked cell, measured on TRAIN (the number that picked it)
+    train_pass_pct: float = float("nan")     # locked cell, measured on train
     train_floor: float = float("nan")        # p25 of the winning combo's grid (the selection score)
-    test_pass_pct: float = float("nan")      # single-account Monte Carlo on TEST
+    test_pass_pct: float = float("nan")      # single-account Monte Carlo on test
     test_days_to_pass: float = float("nan")
     test_wr: float = float("nan")
     test_trades: int = 0
-    multi_pass_rate: float = float("nan")    # N-slot rotation on TEST (passed/(passed+blown))
+    multi_pass_rate: float = float("nan")    # N-slot rotation on test (passed/(passed+blown))
     multi_passed: int = 0
     multi_blown: int = 0
     multi_timeout: int = 0
     multi_entries_used: int = 0
-    winner_test_rank_pct: float = float("nan")  # for PBO: rank of winner among survivors on TEST (0=best,1=worst)
+    winner_test_rank_pct: float = float("nan")  # for PBO: winner's rank among survivors on test (0=best, 1=worst)
     note: str = ""
 
 
@@ -189,8 +185,8 @@ class WalkForwardResult:
         return 100.0 * P / (P + B) if (P + B) else float("nan")
     @property
     def pbo(self):
-        """Fraction of folds where the train-winner landed in the WORSE OOS
-        half among that fold's survivors (rank_pct > 0.5). ~0 good, ~0.5 random."""
+        """Fraction of folds where the train winner landed in the worse OOS
+        half of that fold's survivors (rank_pct > 0.5). ~0 good, ~0.5 random."""
         r = [f.winner_test_rank_pct for f in self.folds if np.isfinite(f.winner_test_rank_pct)]
         return float(np.mean([x > 0.5 for x in r])) if r else float("nan")
     def table(self):
@@ -229,7 +225,6 @@ def walk_forward(firm, bars, strategy_factory, param_grid,
     for fd in folds:
         bars_tr = _slice(bars, fd.train_start, fd.train_end)
         bars_te = _slice(bars, fd.test_start, fd.test_end)
-        n_tr_days = bars_tr.index.normalize().nunique()
         fr = FoldResult(fold=fd, n_train_trades=0)
 
         winner, survivors = _select_on_train(
@@ -252,7 +247,7 @@ def walk_forward(firm, bars, strategy_factory, param_grid,
         fr.train_floor = winner["score"]
         fr.n_train_trades = b["trades"]
 
-        # --- TEST: single-account Monte Carlo on held-out block ---
+        # test block: single-account Monte Carlo
         s_win = strategy_factory(**winner["params"])
         oc = oos_check(firm, s_win, bars_te, stop_points=fr.stop_points, rr=fr.rr,
                        risk_pct=fr.risk_pct, max_hold=max_hold, n_paths=n_paths,
@@ -263,7 +258,7 @@ def walk_forward(firm, bars, strategy_factory, param_grid,
         else:
             fr.note = oc["warning"]
 
-        # --- TEST: N-slot rotation on held-out block (needs detail=True) ---
+        # test block: N-slot rotation (needs detail=True)
         E_te = backtest_entries(s_win, bars_te, stop_points=fr.stop_points,
                                 max_hold=max_hold, detail=True)
         if E_te.entry_time is not None and len(E_te.day_ids) > 0:
@@ -274,7 +269,7 @@ def walk_forward(firm, bars, strategy_factory, param_grid,
             fr.multi_passed, fr.multi_blown = res.n_passed, res.n_blown
             fr.multi_timeout, fr.multi_entries_used = res.n_timeout, res.entries_used
 
-        # --- PBO: rank the winner among survivors, scored on the TEST block ---
+        # PBO: rank the winner among survivors, scored on the test block
         if len(survivors) > 1:
             test_scores = []
             for sv in survivors:

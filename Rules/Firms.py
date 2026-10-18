@@ -1,12 +1,12 @@
 """
-firms.py — $50K account rule configs for the 5 prop firms.
+Firms.py: eval rule configs per prop firm ($50K accounts, plus Lucid 25K).
 
-Everything here is derived from the rule .md files you provided. Where the
-markdown was ambiguous about *trailing vs static* drawdown or *hard vs soft*
-daily-loss behaviour, I chose a best-guess default and marked it `# VERIFY`.
-Those choices matter a lot for pass rates, so tweak them if you confirm otherwise.
+Derived from the firms' rule .md files. Where those were unclear about
+trailing vs static drawdown or hard vs soft daily-loss behaviour, the value is
+a best guess marked `# VERIFY`. These settings move pass rates a lot, so
+correct them once confirmed.
 
-Key modelling dimensions (this is where firms actually differ):
+Where the firms differ:
   1. drawdown TYPE  : static floor vs EOD-trailing vs intraday-trailing
   2. trail_lock     : the equity level at which a trailing DD stops moving up
                       (e.g. 50000 = floor locks at breakeven once you're up)
@@ -21,7 +21,7 @@ from enum import Enum
 
 class DrawdownType(str, Enum):
     STATIC = "static"                 # fixed floor, never moves
-    EOD_TRAIL = "eod_trail"           # trails highest END-OF-DAY balance
+    EOD_TRAIL = "eod_trail"           # trails highest end-of-day balance
     INTRADAY_TRAIL = "intraday_trail" # trails highest intraday equity peak (harshest)
 
 
@@ -59,8 +59,8 @@ class FirmConfig:
 # ----------------------------------------------------------------------------
 FIRMS: dict[str, FirmConfig] = {
 
-    # Apex — EOD trailing path. Trailing DD locks at the starting balance once
-    # you're up ~$2k (well-known Apex behaviour). DLL is a hard rule in eval.
+    # Apex, EOD trailing path. Trailing DD locks at the starting balance once
+    # the account is up ~$2k. DLL is a hard rule in eval.
     "apex_eod": FirmConfig(
         key="apex_eod", name="Apex (EOD Trailing)",
         profit_target=3_000, max_drawdown=2_000,
@@ -69,7 +69,7 @@ FIRMS: dict[str, FirmConfig] = {
         consistency_pct=None, min_days=1,
     ),
 
-    # Apex — Intraday trailing path. No DLL. Harshest barrier.
+    # Apex, Intraday trailing path. No DLL. Harshest barrier.
     "apex_intraday": FirmConfig(
         key="apex_intraday", name="Apex (Intraday Trailing)",
         profit_target=3_000, max_drawdown=2_000,
@@ -78,16 +78,16 @@ FIRMS: dict[str, FirmConfig] = {
         consistency_pct=None, min_days=1,
     ),
 
-    # Lucid — EOD drawdown, DLL $1,200. Trailing-vs-static not explicit in docs.
+    # Lucid, EOD drawdown, DLL $1,200. Trailing-vs-static not explicit in docs.
     "lucid": FirmConfig(
         key="lucid", name="Lucid (LucidPro)",
         profit_target=3_000, max_drawdown=2_000,
         dd_type=DrawdownType.EOD_TRAIL, trail_lock=50_000,  # VERIFY (could be STATIC)
         daily_loss_limit=1_200, dll_behavior=DLLBehavior.HARD_FAIL,  # VERIFY hard
-        consistency_pct=None, min_days=1,  # consistency is a PAYOUT rule, not eval
+        consistency_pct=None, min_days=1,  # consistency is a payout rule, not an eval rule
     ),
 
-    # Tradeify — SELECT eval. EOD DD, NO daily loss limit in eval,
+    # Tradeify, Select eval. EOD DD, no daily loss limit in eval,
     # 40% consistency, min 3 trading days.
     "tradeify_select": FirmConfig(
         key="tradeify_select", name="Tradeify (Select)",
@@ -97,7 +97,7 @@ FIRMS: dict[str, FirmConfig] = {
         consistency_pct=0.40, min_days=3,
     ),
 
-    # Tradeify — GROWTH eval. EOD TRAILING DD, soft DLL $1,250 (ends day, no fail),
+    # Tradeify, Growth eval. EOD trailing DD, soft DLL $1,250 (ends day, no fail),
     # no consistency in eval, can pass in 1 day.
     "tradeify_growth": FirmConfig(
         key="tradeify_growth", name="Tradeify (Growth)",
@@ -107,7 +107,7 @@ FIRMS: dict[str, FirmConfig] = {
         consistency_pct=None, min_days=1,
     ),
 
-    # MyFundedFutures — RAPID. Intraday trailing DD, no DLL,
+    # MyFundedFutures, Rapid. Intraday trailing DD, no DLL,
     # 50% consistency in eval, min 2 days.
     "mffu_rapid": FirmConfig(
         key="mffu_rapid", name="MyFundedFutures (Rapid)",
@@ -116,7 +116,8 @@ FIRMS: dict[str, FirmConfig] = {
         daily_loss_limit=None, dll_behavior=DLLBehavior.NONE,
         consistency_pct=0.50, min_days=2,
     ),
-    # Topstep — Trading Combine. Trailing MLL ($2,000), no DLL,
+
+    # Topstep, Trading Combine. Trailing MLL ($2,000), no DLL,
     # consistency = best day <= 50% of total profit, min 2 days.
     "topstep": FirmConfig(
         key="topstep", name="Topstep (Combine)",
@@ -125,7 +126,8 @@ FIRMS: dict[str, FirmConfig] = {
         daily_loss_limit=None, dll_behavior=DLLBehavior.NONE,
         consistency_pct=0.50, min_days=2,
     ),
-        # ── Lucid 25K accounts (VERIFIED via web, Aug 2026) ──────────────────────
+
+    # Lucid 25K accounts (verified online, Aug 2026)
     "lucid_pro_25k": FirmConfig(
         key="lucid_pro_25k",
         name="Lucid Pro 25K",
@@ -134,7 +136,7 @@ FIRMS: dict[str, FirmConfig] = {
         max_drawdown=1_000.0,                # floor starts at $24,000, EOD-trails
         dd_type=DrawdownType.EOD_TRAIL,
         trail_lock=25_000.0,                 # locks (static) once floor reaches start balance
-        daily_loss_limit=None,               # NO DLL on the 25K
+        daily_loss_limit=None,               # no DLL on the 25K
         dll_behavior=DLLBehavior.NONE,
         consistency_pct=None,                # LucidPro eval: no consistency rule
         min_days=1,                          # 1-day pass allowed

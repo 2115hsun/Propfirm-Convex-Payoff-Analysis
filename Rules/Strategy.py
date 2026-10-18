@@ -1,15 +1,16 @@
 """
-Strategy.py — the Monte Carlo resampling layer.
+Strategy.py: the Monte Carlo resampling layer.
 
 The engine calls strategy.draw(n_paths, n_trades, rng) and gets:
     R        : ndarray[n_paths, n_trades]  per-trade R-multiples
     new_day  : ndarray[n_paths, n_trades] bool, or None
-               True marks the first trade of a trading day. This makes
-               trades-per-day EMERGENT from data (whole days are resampled).
-               If None, the engine falls back to its trades_per_day argument.
+               True marks the first trade of a trading day, so trades per
+               day come from the data (whole days are resampled). If None,
+               the engine falls back to its trades_per_day argument.
+    mae      : ndarray[n_paths, n_trades] adverse excursion in R, or None
 
   * EmpiricalStrategy(returns_R, day_ids=...)  <- from Backtest.ledger_for_rr(...)
-    Pass day_ids so whole days are resampled (nothing about trades/day assumed).
+    Pass day_ids so whole days are resampled.
   * SyntheticStrategy(win_rate, rr)            <- for abstract geometry demos only.
 """
 from __future__ import annotations
@@ -17,6 +18,7 @@ import numpy as np
 import datetime as dt
 
 class Timewindow:
+    """Wrap an entry strategy and keep only entries between start and end."""
     wants_bars = True
     def __init__(self, inner, start="09:30", end="16:00"):
         self.inner = inner
@@ -29,7 +31,8 @@ class Timewindow:
         times = bars.index[idx].time
         keep = np.array([self.start <= t <= self.end for t in times], dtype=bool)
         return idx[keep], direction[keep]
-    
+
+
 class Strategy:
     name: str = "strategy"
 
@@ -62,8 +65,8 @@ class SyntheticStrategy(Strategy):
 
 
 class EmpiricalStrategy(Strategy):
-    """Bootstrap a real R-ledger. With day_ids, resamples WHOLE days so
-    trades-per-day (and their clustering) come straight from the data."""
+    """Bootstrap a real R-ledger. With day_ids, whole days are resampled, so
+    trades per day and their clustering come from the data."""
 
     def __init__(self, returns_R, name="empirical", day_ids=None, mae_R=None):
         self.returns_R = np.asarray(returns_R, float)

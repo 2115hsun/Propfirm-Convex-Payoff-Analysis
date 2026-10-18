@@ -1,14 +1,10 @@
 """
-Analysis_points.py -- 3-D risk-geometry search for a FIXED-POINTS stop:
+Analysis.py: 3-D risk-geometry search for a fixed-points stop:
 (stop distance in points) x (risk % per trade) x (R:R) -> pass rate.
 
-Companion to Backtest_points.py (no ATR anywhere in either file). Where
-Analysis.py's risk_rr_heatmap() sweeps risk%/R:R against a SINGLE
-already-built Entries ledger (stop width was decided once, upstream, via
-k_stop_atr), this module adds stop width as its own axis: a different
-stop_points value changes which trades actually hit stop vs. target, so it
-needs its own backtest_entries() call per value -- not just a different R:R
-read off one ledger, the way risk%/R:R can be.
+Stop width is its own axis here. A different stop_points value changes which
+trades hit the stop or the target, so each value needs its own
+backtest_entries() call; risk% and R:R can be read off one ledger.
 
 Core outputs:
   risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid)
@@ -30,62 +26,45 @@ from Engine import simulate
 from Backtest import backtest_entries, ledger_for_rr, measured_winrate
 
 _HEAT = LinearSegmentedColormap.from_list(
-    "rag", ["#8a1f1f", "#c0392b", "#e67e22", "#c9b02a", "#4a9a3a", "#1e7a2e"]
+    "rag", ["#8a1f1f", "#c0392b", "#e67e22", "#c9b02a", "#4a9a3a", "#1e7a2e"])
 
-)
+
 def risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid,
                      max_hold=120, n_paths=2000, max_trades=300, seed=0,
                      min_trades=25, max_days_to_pass=None):
-    """Full 3-D sweep: builds ONE Entries ledger per stop_points value, then
-    runs optimal_geometry-style Monte Carlo at every (stop, risk%, R:R) cell.
+    """Full 3-D sweep: one Entries ledger per stop_points value, then a Monte
+    Carlo run at every (stop, risk%, R:R) cell.
 
-    `speed_grid` (mean_trades_to_pass, from the Monte Carlo) says nothing
-    about WALL-CLOCK time on its own -- a combo needing only 70 trades to
-    pass still takes 9 months to actually reach if it only fires 0.4x/day.
-    `days_grid` is `SimResult.mean_days_to_pass` -- ALSO straight from the
-    same Monte Carlo, not a post-hoc estimate: EmpiricalStrategy is always
-    built with day_ids here, so simulate() block-bootstraps WHOLE historical
-    trading days (real day-to-day trade-count clustering, not a synthetic
-    constant rate) and tracks each simulated path's own day count to passing,
-    averaged over all n_paths. So both the "how many trades" and "how many
-    days" numbers are simulation outputs, averaged across many resampled
-    paths -- not one lucky historical run. Pass `max_days_to_pass` to make
-    that a real constraint on which cell counts as 'best': among cells
-    estimated to pass within that many trading days, the highest pass_pct
-    wins -- not the single highest pass_pct on the whole grid regardless of
-    how long it'd take to get there. If NO cell meets the ceiling,
-    `best['met_days_ceiling']` comes back False and the unconstrained
-    highest-pass_pct cell is used instead (so the function never silently
-    fails) -- check that flag.
+    speed_grid is mean trades to pass. It says nothing about calendar time:
+    a combo that passes in 70 trades still takes months if it fires 0.4x/day.
+    days_grid is SimResult.mean_days_to_pass from the same Monte Carlo.
+    EmpiricalStrategy gets day_ids here, so simulate() resamples whole
+    historical days (keeping real trade-count clustering) and counts each
+    path's days to passing.
 
-    CAVEAT this does NOT cover: the Monte Carlo only resamples from ONE
-    fixed historical R-ledger per cell -- it averages away PATH-level luck
-    (which random order the same trades come in), but if that ledger itself
-    is a small/lucky historical sample (e.g. a param combo with few total
-    trades), every resampled path inherits that same bias. Sweeping many
-    (stop, risk%, R:R) cells x many indicator-param combos and picking the
-    best-looking one is a multiple-comparisons search on top of that --
-    the winner is systematically more likely to be a combo whose historical
-    sample happened to look good, not necessarily the truest edge. Guard
-    against this with an in-sample/out-of-sample split (pick params on one
-    period, verify pass_pct/days_to_pass on a held-out period), not just a
-    bigger n_paths.
+    max_days_to_pass restricts 'best' to cells that pass within that many
+    trading days on average. If no cell qualifies, best['met_days_ceiling']
+    is False and the unconstrained top cell is returned instead.
+
+    Caveat: each cell resamples one fixed historical ledger. That averages
+    out the luck of trade order, but if the ledger itself is a small or lucky
+    sample, every path inherits the bias. Picking the best of many cells and
+    param combos adds a multiple-comparisons bias on top. A larger n_paths
+    doesn't fix either; check the pick on held-out data (oos_check).
 
     Returns a dict with pass_grid/speed_grid/days_grid (shape
     len(stop_grid) x len(risk_pcts) x len(rr_grid)), wr_grid (shape
-    len(stop_grid) x len(rr_grid) -- win rate doesn't depend on risk%),
-    trades_grid/trades_per_day (per stop width), the flat 'best' cell, and
-    the per-stop Entries ledgers (entries_by_stop) so callers can reuse them
-    (e.g. for a 2-D risk_rr_heatmap at just the winning stop width) without
-    rebuilding."""
+    len(stop_grid) x len(rr_grid), since win rate doesn't depend on risk%),
+    trades_grid/trades_per_day per stop width, the 'best' cell, and the
+    per-stop ledgers (entries_by_stop) so callers can reuse them."""
     stop_grid = list(stop_grid); risk_pcts = list(risk_pcts); rr_grid = list(rr_grid)
     ns, nr, nk = len(stop_grid), len(risk_pcts), len(rr_grid)
     pass_grid = np.full((ns, nr, nk), np.nan)
     speed_grid = np.full((ns, nr, nk), np.nan)
-    days_grid = np.full((ns, nr, nk), np.nan)   # SimResult.mean_days_to_pass -- see docstring caveat
+    days_grid = np.full((ns, nr, nk), np.nan)   # SimResult.mean_days_to_pass
     wr_grid = np.full((ns, nk), np.nan)
     trades_grid = np.zeros(ns, dtype=int)
-    trades_per_day = np.zeros(ns, dtype=float)   # measured (not simulated) -- display/diagnostic only
+    trades_per_day = np.zeros(ns, dtype=float)   # measured, not simulated; display only
     entries_by_stop = {}
 
     for si, sp in enumerate(stop_grid):
@@ -94,7 +73,7 @@ def risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid,
         trades_grid[si] = len(E.day_ids)
         trades_per_day[si] = len(E.day_ids) / max(E.n_days, 1)
         if len(E.day_ids) < min_trades:
-            continue   # too few trades at this stop width to trust -- leave this slab NaN
+            continue   # too few trades at this stop width; leave this slab NaN
         for ki, rr in enumerate(rr_grid):
             R, days = ledger_for_rr(E, rr)
             strat = EmpiricalStrategy(R, name=f"{sp:g}pt {rr:g}R", day_ids=days,
@@ -105,10 +84,10 @@ def risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid,
                                n_paths=n_paths, max_trades=max_trades, seed=seed)
                 pass_grid[si, ri, ki] = res.pass_rate * 100
                 speed_grid[si, ri, ki] = res.mean_trades_to_pass
-                days_grid[si, ri, ki] = res.mean_days_to_pass   # simulated, block-bootstrapped by real day -- not speed_grid/trades_per_day
+                days_grid[si, ri, ki] = res.mean_days_to_pass
 
     if not np.isfinite(pass_grid).any():
-        raise ValueError("No (stop, risk%, R:R) cell cleared min_trades -- "
+        raise ValueError("No (stop, risk%, R:R) cell cleared min_trades; "
                          "widen stop_grid or lower min_trades.")
 
     met_ceiling = True
@@ -118,7 +97,7 @@ def risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid,
         if within.any():
             candidate_grid = np.where(within, pass_grid, np.nan)
         else:
-            met_ceiling = False   # nothing qualifies -- fall back to the unconstrained grid below
+            met_ceiling = False   # nothing qualifies; fall back to the unconstrained grid
 
     bi = np.unravel_index(np.nanargmax(candidate_grid), candidate_grid.shape)
     best = dict(stop_points=float(stop_grid[bi[0]]), risk_pct=float(risk_pcts[bi[1]]),
@@ -135,25 +114,18 @@ def risk_geometry_3d(firm, strategy, bars, stop_grid, risk_pcts, rr_grid,
 
 def oos_check(firm, strategy, bars_oos, stop_points, rr, risk_pct,
              max_hold=120, n_paths=2000, max_trades=300, seed=0, min_trades=10):
-    """Evaluate ONE already-chosen (stop_points, rr, risk_pct) cell for
-    `strategy` on held-out data -- no new argmax, no re-optimization, just a
-    direct measurement of how the exact combo already picked on in-sample
-    data performs on data it never saw.
+    """Measure one already-chosen (stop_points, rr, risk_pct) cell on
+    held-out data, with no re-optimization.
 
-    This is the check risk_geometry_3d()'s Monte Carlo averaging alone can't
-    give you (see its docstring caveat): averaging over many resampled paths
-    protects against PATH-level luck in one fixed historical ledger, but says
-    nothing about whether that ledger's own history -- or the search over
-    many combos that picked it -- was itself a lucky sample. Compare this
-    result's pass_pct/days_to_pass against the in-sample `best` dict; a large
-    drop is the actual overfitting signal, not anything the in-sample number
-    alone can tell you."""
+    Compare pass_pct/days_to_pass here with the in-sample `best` dict. A large
+    drop means the in-sample pick was overfit, which risk_geometry_3d() can't
+    detect on its own (see its caveat)."""
     E = backtest_entries(strategy, bars_oos, stop_points=stop_points, max_hold=max_hold)
     n_trades = len(E.day_ids)
     if n_trades < min_trades:
         return dict(trades=n_trades, pass_pct=float("nan"), days_to_pass=float("nan"),
                     speed=float("nan"), wr=float("nan"),
-                    warning=f"only {n_trades} OOS trades (< min_trades={min_trades}) -- "
+                    warning=f"only {n_trades} OOS trades (< min_trades={min_trades}); "
                             f"too few to trust; widen OOS_FRACTION or treat as inconclusive")
     R, days = ledger_for_rr(E, rr)
     strat_oos = EmpiricalStrategy(R, name=f"OOS {stop_points:g}pt {rr:g}R", day_ids=days,
@@ -166,10 +138,8 @@ def oos_check(firm, strategy, bars_oos, stop_points, rr, risk_pct,
 
 def plot_risk_geometry_3d(firm, g, size_range=(30, 260), savepath=None):
     """3-D bubble chart: x=stop distance (points), y=R:R (target/stop),
-    z=risk per trade (%); color AND bubble size both encode pass rate
-    (redundant encoding -- a 3-D scatter can't show a per-cell number the way
-    the 2-D heatmap does, so size stands in for it). The single best cell is
-    marked with a star."""
+    z=risk per trade (%). Color and bubble size both encode pass rate, since
+    a 3-D scatter can't label each cell. The best cell is marked with a star."""
     pass_grid, stop_grid, risk_pcts, rr_grid = (
         g["pass_grid"], g["stop_grid"], g["risk_pcts"], g["rr_grid"])
     best = g["best"]
@@ -197,7 +167,7 @@ def plot_risk_geometry_3d(firm, g, size_range=(30, 260), savepath=None):
     days_note = (f" in ~{best['days_to_pass']:.0f} trading days" if "days_to_pass" in best
                  and np.isfinite(best["days_to_pass"]) else "")
     ceiling_note = "" if best.get("met_days_ceiling", True) else "  [!] NO cell met the days ceiling"
-    ax.set_title(f"Pass-rate surface -- {firm.name}\n"
+    ax.set_title(f"Pass-rate surface: {firm.name}\n"
                  f"BEST: {best['stop_points']:g}pt stop / {tgt_pts:g}pt tgt "
                  f"({best['rr']:g}R) @ {best['risk_pct']:.2f}% -> "
                  f"{best['pass_pct']:.0f}% pass{days_note} (WR {best['wr']:.0%}){ceiling_note}",
@@ -211,20 +181,16 @@ def plot_risk_geometry_3d(firm, g, size_range=(30, 260), savepath=None):
 
 
 def plot_top_cells(g, top_n=10, max_days_to_pass=None, savepath=None):
-    """Ranked horizontal bar chart of the top cells by pass rate -- a plain-
-    English complement to the 3-D bubble chart, which can't show exact
-    per-cell numbers (that's what summary_table_3d()'s text table is for;
-    this is the same data, but readable as a shape, not a grid of digits).
+    """Horizontal bar chart of the top cells by pass rate (the same rows as
+    summary_table_3d()).
 
-    Bar LENGTH = pass rate (what it's ranked by). Bar COLOR = days-to-pass
-    (green=fast, red=slow, using the same ramp/direction pass rate uses
-    elsewhere -- "green always means good") -- so the pass-rate/speed
-    trade-off this session's runs are optimizing for is visible in one
-    glance instead of a table column you have to read number by number."""
+    Bar length is pass rate, which sets the ranking. Bar color is days to
+    pass, on the same ramp as elsewhere so green means good (fast). That puts
+    the pass-rate vs speed trade-off in one picture."""
     df = summary_table_3d(g, top_n=top_n, max_days_to_pass=max_days_to_pass)
     df = df[np.isfinite(df["days_to_pass"])]
     if df.empty:
-        raise ValueError("No cells with a finite days_to_pass to plot -- "
+        raise ValueError("No cells with a finite days_to_pass to plot; "
                          "widen max_days_to_pass or top_n.")
     df = df.iloc[::-1].reset_index(drop=True)   # barh draws bottom-up; reverse so #1 lands on top
 
@@ -264,15 +230,12 @@ def plot_top_cells(g, top_n=10, max_days_to_pass=None, savepath=None):
 
 
 def summary_table_3d(g, top_n=15, max_days_to_pass=None) -> pd.DataFrame:
-    """Flat table of the top cells across the whole 3-D grid, for a
-    plain-text readout alongside the chart (bubble size/color alone can be
-    hard to read exact numbers off of).
+    """Flat table of the top cells across the 3-D grid, for exact numbers
+    next to the chart.
 
-    Pass `max_days_to_pass` to filter OUT cells that would take longer than
-    that many trading days to pass (same constraint risk_geometry_3d()'s
-    `best` cell uses) before ranking by pass_pct -- otherwise the top of
-    this table can be dominated by high-pass/low-frequency cells that take
-    months to actually reach in real trading."""
+    max_days_to_pass drops cells slower than that many trading days before
+    ranking by pass_pct (the same rule as risk_geometry_3d()'s `best`).
+    Without it, slow high-pass cells that take months can fill the top."""
     stop_grid, risk_pcts, rr_grid = g["stop_grid"], g["risk_pcts"], g["rr_grid"]
     pass_grid, speed_grid, wr_grid = g["pass_grid"], g["speed_grid"], g["wr_grid"]
     days_grid = g.get("days_grid")

@@ -1,10 +1,10 @@
 """
-Run.py — command-line orchestrator.
+Run.py: command-line entry point.
 
     python Run.py --strategy bos --data data/SAMPLE_1min.parquet --firm apex_intraday
 
-Discovers the optimal risk geometry for the chosen strategy + data + firm and
-saves the figures. No predefined risk %, R:R, or trades/day.
+Finds the best risk % and R:R for the chosen strategy, data and firm, and
+saves the figures. Risk %, R:R and trades/day are all searched, not preset.
 
 Firm keys: apex_eod, apex_intraday, lucid, tradeify_select,
            tradeify_growth, mffu_rapid, topstep

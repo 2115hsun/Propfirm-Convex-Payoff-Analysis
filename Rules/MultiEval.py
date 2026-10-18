@@ -1,53 +1,29 @@
 """
-MultiEval.py -- deterministic multi-account replay: given ONE real (already-
-built) Entries ledger, simulate running N_ACCOUNTS eval accounts CONCURRENTLY
-off the SAME signal stream, with the constraint that each account takes AT
-MOST ONE trade per calendar trading day.
+MultiEval.py: deterministic multi-account replay. Given one real Entries
+ledger, run N eval accounts at the same time off the same signal stream,
+each taking at most one trade per trading day.
 
-Why this is a different question from Engine.simulate(): Engine.simulate()
-answers "what's the pass probability of ONE account trading this edge,
-averaged over many resampled hypothetical futures" -- a statistical read on
-a single account. This module answers a complementary, concrete question:
-"if I actually buy N_ACCOUNTS evals and trade them all off the SAME real
-signal stream, one trade per account per day, what would ACTUALLY have
-happened over this specific historical period" -- a baseline to compare
-real multi-account trading against, not a resampled distribution. It also
-directly models the motivation for running several evals at once: a day
-with multiple signals no longer stacks every one of them into a single
-account's day (and therefore a single account's trailing-drawdown/DLL
-exposure) -- it spreads them across separate accounts instead.
+Engine.simulate() gives the pass probability of one account averaged over
+many resampled futures. This module replays what would have happened to N
+real accounts over this specific period. It also shows why running several
+evals helps: on a day with several signals, they go to separate accounts
+instead of stacking into one account's drawdown and DLL.
 
-Trade-distribution rule: entries are walked in chronological order. Within
-a calendar day, each new signal is assigned to the next LIVE account (not
-yet passed/failed) that hasn't already traded today, following a rotating
-pointer that carries over across days (so allocation stays fair over time,
-not reset to account 0 every morning). If every live account has already
-traded today, any further signal that day is skipped entirely -- mirrors
-manually trading N_ACCOUNTS accounts and running out of hands, rather than
-queuing the overflow to a later slot.
+Allocation: entries are walked in order. Each signal goes to the next live
+account that hasn't traded today, following a rotating pointer that carries
+over between days so no account is always first. Once every live account
+has traded today, the day's remaining signals are skipped, not queued.
 
-Each account only advances its OWN clock (equity/peak/day_index/etc -- the
-same state machine Engine.simulate() runs per Monte Carlo path, just scalar
-here instead of vectorized across N paths) on days it actually took a
-trade. Because the one-trade/day cap means a trade IS that account's whole
-trading day, every trade doubles as that account's day-end: there's no
-separate "day boundary" event the way there is in Engine.simulate(), where
-a single account can take several trades before its day closes.
+Each account runs the same state machine as one Engine.simulate() path,
+scalar instead of vectorized, and only advances on days it trades. With one
+trade per day, every trade is also that account's day-end.
 
-Account replacement (restart_on_fail): a firm-rule BREACH (FAIL) is not the
-end of the simulation for that SLOT -- a real trader who blows an eval buys
-another one and keeps going. When a slot's account fails, a brand-new
-account (fresh equity/drawdown floor/day counter, no memory of the old
-one's history) immediately takes its place -- eligible for the very next
-signal that slot's rotation turn comes up, even later the SAME calendar
-day, since it has no trades of its own yet today. PASS and TIMEOUT do NOT
-restart the slot (a passed account graduates and a timed-out one is simply
-abandoned, both permanently vacate that slot for the rest of the window --
-restart_on_fail's name is deliberately specific to breaches only). Every
-attempt any slot ever makes -- however it ends -- is recorded in
-MultiEvalResult.history, so a slot that blows through several accounts over
-the OOS window shows up as several rows, and n_passed/n_blown/n_timeout
-are tallies over ALL of them, not just the N_ACCOUNTS live at the end.
+Restarts: when an attempt ends, the slot can be refilled with a brand-new
+account (fresh equity, floor and day count) that is eligible for the next
+signal, even later the same day. restart_on_fail controls this for FAIL;
+restart_on_pass controls it for PASS and TIMEOUT. Both default to True.
+Every attempt is recorded in MultiEvalResult.history, so n_passed, n_blown
+and n_timeout count all attempts, not just the accounts live at the end.
 """
 
 from __future__ import annotations
@@ -62,30 +38,29 @@ from Backtest import Entries, ledger_for_rr
 @dataclass
 class AccountResult:
     idx: int                                 # slot index (0..n_accounts-1)
-    attempt: int                             # 1-based attempt count for THIS slot (>1 means it's been restarted before)
+    attempt: int                             # 1-based attempt count for this slot (>1 = restarted before)
     status: str                              # "PASS" / "FAIL" / "TIMEOUT" / "ONGOING"
     trades_taken: int
-    trading_days: int                        # == day_index -- distinct days THIS attempt traded
+    trading_days: int                        # == day_index, distinct days this attempt traded
     resolved_at: "pd.Timestamp | None"       # entry_time of the trade that resolved it (None if ONGOING)
     final_equity: float
-    equity_curve: list                       # [(entry_time, equity_after_trade), ...] -- THIS attempt only, resets to start_balance on restart
+    equity_curve: list                       # [(entry_time, equity_after_trade), ...] for this attempt only
 
 
 @dataclass
 class MultiEvalResult:
-    history: list                            # list[AccountResult] -- EVERY attempt any slot ever made, in resolution order
+    history: list                            # list[AccountResult], every attempt by any slot, in resolution order
     n_accounts: int                          # concurrent slots
     entries_used: int                        # entries actually assigned to some account
     entries_skipped: int                     # overflow signals dropped (every live slot already traded that day, or all slots permanently vacated)
     max_days: "int | None" = None            # the days-to-pass ceiling this replay was run with (None = no ceiling)
-    restart_on_fail: bool = True  
-    restart_on_pass: bool = True             # whether a breached slot was immediately replaced with a fresh account
+    restart_on_fail: bool = True             # FAIL refills the slot with a fresh account
+    restart_on_pass: bool = True             # PASS / TIMEOUT refill the slot with a fresh account
 
     @property
     def current(self) -> list:
-        """The most recent attempt per slot -- what's occupying it right now
-        (ONGOING if still live, or a frozen PASS/TIMEOUT that was never
-        replaced, since only FAIL restarts)."""
+        """The most recent attempt per slot: ONGOING if still live, or the
+        final result of an attempt that wasn't restarted."""
         last = {}
         for a in self.history:
             last[a.idx] = a
@@ -103,10 +78,8 @@ class MultiEvalResult:
     def n_ongoing(self) -> int: return sum(a.status == "ONGOING" for a in self.history)
     @property
     def pass_rate(self) -> float:
-        """PASSED / (PASSED + BLOWN) -- excludes TIMEOUT/ONGOING attempts,
-        which didn't break any rule and aren't a 'loss' the way a breach is;
-        counting them as failures would understate how often a clean shot
-        actually converts. Returns 0.0 if no attempt has resolved either way."""
+        """PASSED / (PASSED + BLOWN). TIMEOUT and ONGOING attempts are left
+        out because they broke no rule. Returns 0.0 if nothing has resolved."""
         resolved = self.n_passed + self.n_blown
         return self.n_passed / resolved if resolved else 0.0
 
@@ -122,32 +95,21 @@ class MultiEvalResult:
 def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr: float,
                          n_accounts: int = 3, max_days: "int | None" = None,
                          restart_on_fail: bool = True, restart_on_pass: bool = True) -> MultiEvalResult:
-    
-    """Deterministic, single-pass replay -- see module docstring for the
-    trade-distribution rule, the restart-on-breach mechanic, and why every
-    trade doubles as its account's day-end.
+    """Single-pass replay; the module docstring covers allocation and restarts.
 
-    `max_days`: the SAME "how many trading days is this realistically
-    allowed to take" patience ceiling Section 1's `risk_geometry_3d(...,
-    max_days_to_pass=...)` uses. An attempt whose `day_index` (==
-    `trading_days`) reaches `max_days` without having already passed on
-    that same trade is marked "TIMEOUT" and permanently vacates its slot
-    (TIMEOUT does not restart, even with restart_on_fail=True -- giving up
-    on a slow account isn't the same event as it breaching a rule). None
-    (default) means no ceiling.
+    max_days: the same patience ceiling as risk_geometry_3d(max_days_to_pass=).
+    An attempt that reaches max_days trading days without passing on that
+    trade is marked TIMEOUT. None (default) means no ceiling.
 
-    `restart_on_fail`: when True (default), a slot whose account FAILS
-    (breaches a firm rule) is immediately reset to a brand-new account and
-    keeps trading through the rest of the data -- models "buy another eval
-    and keep going" rather than abandoning that slot. Set False to freeze a
-    slot the moment it breaches (the old, pre-restart behavior).
+    restart_on_fail: refill a slot with a fresh account after a FAIL, i.e.
+    buy another eval and keep going. False freezes the slot after a breach.
 
-    `entries` must have been built with backtest_entries(..., detail=True)
-    (needs entry_time for chronological/day-boundary ordering and for the
-    equity-curve timestamps). Scores each entry with ledger_for_rr()'s exact
-    win/loss/scratch rule at `rr` -- the same function every other pass-rate
-    number in this project is built from, so this stays consistent with
-    Analysis_points.risk_geometry_3d()'s and Engine.simulate()'s grading."""
+    restart_on_pass: the same for PASS and TIMEOUT.
+
+    entries must come from backtest_entries(..., detail=True), since
+    entry_time drives the day ordering and equity-curve timestamps. Each entry
+    is scored with ledger_for_rr() at rr, the same grading Engine.simulate()
+    and risk_geometry_3d() use."""
 
     if entries.entry_time is None:
         raise ValueError("multi_account_replay() needs entries built with "
@@ -180,8 +142,7 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
     history: list[AccountResult] = []
 
     def _reset_slot(i: int) -> None:
-        """Wipe slot i back to a brand-new account -- no memory of the
-        failed one's equity, drawdown floor, or trade history."""
+        """Reset slot i to a brand-new account."""
         equity[i] = firm.start_balance
         peak[i] = firm.start_balance
         eod_peak[i] = firm.start_balance
@@ -202,7 +163,7 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
                     (new_status in ("PASS", "TIMEOUT") and restart_on_pass))
         if _restart:
             attempt_num[i] += 1
-            _reset_slot(i)   # immediately live again -- eligible for the very next signal
+            _reset_slot(i)   # live again for the next signal
 
     pointer = 0
     entries_used = entries_skipped = 0
@@ -210,7 +171,7 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
     for k in range(len(R)):
         day = int(day_ids[k])
 
-        # Next LIVE slot, in rotating order, that hasn't traded today.
+        # next live slot, in rotating order, that hasn't traded today
         acc = None
         for _ in range(n):
             cand = pointer % n
@@ -225,11 +186,10 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
         i = acc
         entries_used += 1
 
-        # --- INTRA-TRADE MAE BREACH (dip below floor then recover = liquidated) ---
-        # ONLY for NON-STOPPED trades: a winner/timeout that dipped through the floor
-        # mid-trade would have been liquidated on the spot. Stopped trades are handled
-        # by the normal -1R loss path below -- their (possibly >1R) intrabar excursion
-        # must NOT drive a deeper phantom breach, since the ledger caps their loss at -1R.
+        # Intra-trade breach, for non-stopped trades only: a winner or timeout
+        # that dipped through the floor mid-trade is liquidated on the spot.
+        # Stopped trades go through the normal -1R path below; the ledger caps
+        # their loss at 1R, so their excursion can't breach any deeper.
         is_stopped_k = (stopped_arr is not None and bool(stopped_arr[k]))
         if (mae is not None and not is_stopped_k
                 and np.isfinite(mae[k]) and mae[k] > 0):
@@ -248,7 +208,7 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
         last_traded_day[i] = day
         curves[i].append((entries.entry_time[k], float(equity[i])))
 
-        # --- intraday-trailing / static: checked immediately, same as Engine.simulate ---
+        # intraday-trailing / static floors are checked right away, as in Engine.simulate
         if is_intraday:
             peak[i] = max(peak[i], equity[i])
             nl = peak[i] - firm.max_drawdown
@@ -260,7 +220,7 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
             _finalize(i, "FAIL", entries.entry_time[k])
             continue
 
-        # --- daily loss limit ---
+        # daily loss limit
         if has_dll and day_pnl[i] <= -firm.daily_loss_limit + 1e-9 \
                 and firm.dll_behavior == DLLBehavior.HARD_FAIL:
             _finalize(i, "FAIL", entries.entry_time[k])
@@ -268,7 +228,7 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
         # SOFT_LOCK needs no extra handling: the one-trade/day cap already
         # means no further trade could happen today regardless.
 
-        # --- this trade IS the account's day-end (one trade/day cap) ---
+        # with one trade per day, this trade is also the account's day-end
         best_day[i] = max(best_day[i], day_pnl[i])
         if is_eod_trail:
             eod_peak[i] = max(eod_peak[i], equity[i])
@@ -291,16 +251,12 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
         elif max_days is not None and day_index[i] >= max_days:
             _finalize(i, "TIMEOUT", entries.entry_time[k])
 
-        # This trade WAS the account's whole day (one-trade/day cap) -- reset
-        # day_pnl now so the next trade THIS ATTEMPT takes (a different day,
-        # by construction) starts its own day_pnl from zero. Safe unconditionally:
-        # a FAIL never reaches this line (it `continue`s above, and if restarted,
-        # _reset_slot() already zeroed day_pnl for the new attempt); PASS/TIMEOUT
-        # freeze the slot, so the reset is a harmless no-op for them.
+        # This trade was the whole day, so the next one starts day_pnl at zero.
+        # A FAIL never reaches here (it `continue`s above), and a restarted
+        # slot was already zeroed by _reset_slot().
         day_pnl[i] = 0.0
 
-    # Whatever's still occupying each slot at the end of the data -- record it
-    # too (as ONGOING) so `history` is a complete account of every attempt.
+    # record attempts still live at the end as ONGOING, so history is complete
     for i in range(n):
         if status[i] == "ONGOING":
             history.append(AccountResult(i, int(attempt_num[i]), "ONGOING", int(trades_taken[i]),
@@ -312,12 +268,11 @@ def multi_account_replay(entries: Entries, firm: FirmConfig, risk_pct: float, rr
 
 
 def plot_multi_eval(result: MultiEvalResult, firm: FirmConfig, savepath=None):
-    """One equity curve per ATTEMPT (not per slot -- a slot that's been
-    restarted several times draws several separate curves, each starting
-    back at `firm.start_balance`), colored by outcome; linestyle cycles by
-    slot so repeated restarts of the same slot are still visually groupable.
-    Dashed lines mark the profit target and the STARTING drawdown floor
-    (illustrative only -- the real floor moves for trailing-DD firms)."""
+    """One equity curve per attempt, colored by outcome. A restarted slot
+    draws several curves, each starting at firm.start_balance; linestyle
+    follows the slot so its attempts can be grouped by eye. Dashed lines mark
+    the profit target and the starting floor (the real floor moves for
+    trailing-DD firms)."""
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(12, 6.5))
     colors = {"PASS": "#1e7a2e", "FAIL": "#c0392b", "TIMEOUT": "#e67e22", "ONGOING": "#7f8c8d"}
@@ -335,7 +290,7 @@ def plot_multi_eval(result: MultiEvalResult, firm: FirmConfig, savepath=None):
     ax.axhline(firm.initial_floor, color="#c0392b", ls="--", lw=1, alpha=0.5, label="starting floor")
     ax.axhline(firm.start_balance, color="grey", ls=":", lw=1, alpha=0.5)
     ax.set_ylabel("Equity ($)"); ax.set_xlabel("Entry time")
-    ax.set_title(f"Multi-eval replay -- {firm.name}, {result.n_accounts} concurrent slots\n{result.summary()}",
+    ax.set_title(f"Multi-eval replay: {firm.name}, {result.n_accounts} concurrent slots\n{result.summary()}",
                 fontweight="bold", fontsize=10)
     ax.legend(fontsize=7, loc="best", ncol=2)
     ax.grid(alpha=0.3)

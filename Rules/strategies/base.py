@@ -1,13 +1,13 @@
 """
-strategies/base.py — the ENTRY-ONLY strategy interface.
+strategies/base.py: the entry-only strategy interface.
 
-A strategy here answers exactly one question: "on which bars do we enter, and in
-which direction?" It defines NO exit and NO R:R — those are supplied by the
-backtester as the bracket for whatever R:R the Monte Carlo is currently testing.
+A strategy says which bars to enter on and in which direction. It has no exit
+and no R:R; the backtester brackets each entry for whatever R:R is being
+tested.
 
-To add a new strategy (SuperTrend, EMA cross, ...): create strategies/<name>.py
-with a class subclassing EntryStrategy and a module-level get_strategy() that
-returns an instance. That's the whole contract.
+To add one (SuperTrend, EMA cross, ...), create strategies/<name>.py with a
+class that subclasses EntryStrategy and a module-level get_strategy() that
+returns an instance.
 """
 from __future__ import annotations
 import numpy as np

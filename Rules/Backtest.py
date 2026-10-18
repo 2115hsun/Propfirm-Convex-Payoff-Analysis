@@ -1,28 +1,16 @@
 """
-Backtest_points.py -- turn an entry-only strategy + OHLC data into an
-R-multiple ledger, with the stop sized as a FIXED NUMBER OF POINTS instead of
-an ATR multiple.
+Backtest.py: turn an entry-only strategy + OHLC data into an R-multiple
+ledger. The stop (1R) is a fixed number of points, not an ATR multiple.
 
-Copy of Backtest.py with the stop-sizing calculation replaced end to end --
-NO reference to ATR anywhere in this file. Everything else (data loading,
-Entries, ledger_for_rr, trade_log, signal_log, strategy loading) is
-unchanged, so any strategy/notebook already using Backtest.py's functions
-works here with zero other changes; only how "1R" (the stop distance) gets
-computed is different.
-
-Why points instead of ATR: position size (contracts) is a free variable --
-you can always size a 20pt stop and a 50pt stop to the SAME dollar risk by
-trading fewer/more contracts. What actually varies with stop width is which
-trades win/lose/scratch (a tighter stop gets touched more often before the
-move plays out; a wider one gives more room but needs a bigger favorable
-move to reach the same R). A fixed-ATR-multiple stop blends that question
-together with "how volatile was the market when this trade fired" -- e.g.
-switching the underlying bars from RTH-only to a full 24h feed changes the
-ATR (and therefore the stop, and therefore every downstream number) even
-though nothing about the strategy or the market's actual point-based risk
-changed. Sweeping stop width directly in points sidesteps that entirely:
-the risk-geometry matrix becomes a genuine 3-D search over (stop points,
-risk % per trade, R:R) -- see Analysis_points.py.
+Why points: contract count is a free variable, so a 20pt stop and a 50pt stop
+can carry the same dollar risk. What stop width really changes is which
+trades win, lose or scratch. A tighter stop gets touched more often before the
+move plays out; a wider one needs a bigger move to reach the same R. An ATR
+stop mixes that with how volatile the market was when the trade fired, so
+switching from RTH-only bars to a 24h feed changes ATR, the stop, and every
+number downstream, even though the strategy didn't change. Sweeping the stop
+in points makes the risk-geometry search a 3-D grid over (stop points,
+risk % per trade, R:R); see Analysis.py.
 
 Data: 1-min OHLC parquet (or csv) in the data/ folder. Columns open/high/low/
 close (+ a datetime index or column). See data/README.md.
@@ -88,19 +76,18 @@ class Entries:
     source: str = "?"
     strategy: str = "?"
     stop_points: float = 0.0  # the fixed stop distance (points) this ledger was built with
-    mae_before: np.ndarray = None  # max ADVERSE excursion (R, positive) before the trade resolved
+    mae_before: np.ndarray = None  # max adverse excursion (R, positive) before the trade resolved
     sizes: "np.ndarray | None" = None   # per-trade size multiplier (None = all 1.0)
-    # Populated only when backtest_entries(..., detail=True) -- lets trade_log()
-    # print exact wall-clock times/prices for manual cross-checking against
-    # real fills. None otherwise (no cost for callers that don't ask for it).
+    # Filled only by backtest_entries(..., detail=True), so trade_log() can print
+    # exact times/prices to check against real fills. None otherwise.
     entry_time: "pd.DatetimeIndex | None" = None
     entry_price: "np.ndarray | None" = None
     direction: "np.ndarray | None" = None
     stop_price: "np.ndarray | None" = None
     exit_time: "pd.DatetimeIndex | None" = None
-    bar_duration: "pd.Timedelta | None" = None   # modal bar spacing -- entry_time is the bar's
-                                                  # START (label='left'); entry_price is that bar's
-                                                  # CLOSE, which isn't known until entry_time + this
+    bar_duration: "pd.Timedelta | None" = None   # modal bar spacing. entry_time is the bar's
+                                                  # start (label='left'); entry_price is that bar's
+                                                  # close, known only at entry_time + this
 
     def summary(self):
         tpd = len(self.day_ids) / max(self.n_days, 1)
@@ -113,43 +100,35 @@ def backtest_entries(strategy, bars, stop_points=25.0, max_hold=480,
                      one_position=True, detail=False):
     """Walk each entry forward once; record what's needed to score any rr.
 
-    stop_points: the 1R unit, in raw price points -- FIXED, same for every
-    entry (not derived from ATR or any other per-bar measure). Sweep this
-    directly (see Analysis_points.risk_geometry_3d) to search stop width as
-    its own axis, alongside risk% and R:R.
+    stop_points: the 1R unit in price points, the same for every entry.
+    Analysis.risk_geometry_3d sweeps it as its own axis next to risk% and R:R.
 
-    detail=True additionally records each entry's real timestamp/price/stop
-    (and exit timestamp) on the returned Entries, for manual trade-by-trade
-    verification via trade_log() -- ignored by every other consumer."""
+    detail=True also records each entry's timestamp, price, stop and exit
+    timestamp, for checking trades one by one with trade_log()."""
     high = bars["high"].to_numpy(float)
     low = bars["low"].to_numpy(float)
     close = bars["close"].to_numpy(float)
     n = close.size
     stop_dist = float(stop_points)
     # dtype=datetime64[ns]: on a tz-aware index, plain .to_numpy() boxes every
-    # timestamp as a Python object (~1s on 500k rows) and makes the np.unique
-    # below ~40x slower too. Session boundaries come out identical either way
-    # since normalize() already snapped to local midnight before this point.
+    # timestamp as a Python object (~1s on 500k rows) and slows the day
+    # comparisons below. Day boundaries are the same either way, since
+    # normalize() already snapped to local midnight.
     dates = bars.index.normalize().to_numpy(dtype="datetime64[ns]")
 
     res = strategy.entries(bars) if getattr(strategy, "wants_bars", False) \
         else strategy.entries(high, low, close)
     if len(res) == 3:
-        idx, direction, third = res
-        third = np.asarray(third, float)
-
-    # For now, a 3rd return value is interpreted as
-    # the exact execution price for each entry.
-        fill_prices = third
-        sizes_in = np.ones(len(idx), float)
-
+        # a 3rd return value is the exact fill price for each entry
+        idx, direction, fill_prices = res
+        fill_prices = np.asarray(fill_prices, float)
     else:
         idx, direction = res
         fill_prices = np.full(len(idx), np.nan)
-        sizes_in = np.ones(len(idx), float)
+    sizes_in = np.ones(len(idx), float)
 
     day_ids, mfe_before, stopped, timeout_R, sizes = [], [], [], [], []
-    mae_before = []   # deepest ADVERSE excursion (R, positive number) before the trade resolved
+    mae_before = []   # deepest adverse excursion (R, positive) before the trade resolved
     entry_times, entry_prices, directions, stop_prices, exit_times = [], [], [], [], []
     day_counter, last_day, busy_until = -1, None, -1
 
@@ -161,21 +140,12 @@ def backtest_entries(strategy, bars, stop_points=25.0, max_hold=480,
         if not np.isfinite(stop_dist) or stop_dist <= 0:
             continue
 
-        # ROUTE ENTRY PRICE DYNAMICALLY: Use custom limit fill if available, else close
-        if np.isfinite(fill_prices[k]):
-            entry = fill_prices[k]
-        else:
-            entry = close[e]
+        # the strategy's own fill price if it gave one, else the bar close
+        entry = fill_prices[k] if np.isfinite(fill_prices[k]) else close[e]
 
-        # Window starts at e+1, NOT e: `entry` is bar e's CLOSE (see fill_time
-        # in trade_log()/signal_log() -- the position isn't live until that
-        # bar finishes), so bar e's own high/low must never be tested against
-        # it. Including bar e here made adv[0]/fav[0] nonzero by construction
-        # (high/low always straddle close) and let a bar-e wick masquerade as
-        # an instant stop/target touch that happened before the fill --
-        # np.flatnonzero(...)[0] would then grab index 0 and discard every
-        # real bar afterward, mislabeling trades that should have won as
-        # instant losses (and vice versa for mfe).
+        # The window starts at e+1. `entry` is bar e's close, so the position
+        # isn't live until that bar finishes, and bar e's high/low (which
+        # always straddle its close) must not count as a stop or target touch.
         j0, j1 = e + 1, min(e + 1 + max_hold, n)
         h = high[j0:j1]; lo = low[j0:j1]
         if d == 1:
@@ -185,15 +155,11 @@ def backtest_entries(strategy, bars, stop_points=25.0, max_hold=480,
             fav = (entry - lo) / stop_dist
             adv = (h - entry) / stop_dist
 
-# First bar where the stop is touched.
-        stops = np.flatnonzero(adv >= 1.0)
+        stops = np.flatnonzero(adv >= 1.0)   # bars where the stop is touched
 
         if stops.size:
             sb = int(stops[0])
-
-    # Conservative treatment:
-    # once the stop bar is reached, do not credit any
-    # favorable excursion from that same bar.
+            # conservative: no favorable excursion is credited on the stop bar
             mfe = float(fav[:sb].max()) if sb > 0 else 0.0
             mae = float(adv[:sb + 1].max()) if adv.size else 0.0   # includes the stop touch (=1R)
             was_stopped = True
@@ -220,9 +186,8 @@ def backtest_entries(strategy, bars, stop_points=25.0, max_hold=480,
 
     kw = {}
     if detail:
-        # modal spacing between consecutive bars -- e.g. Timedelta("3min") for
-        # 3-min bars. Used by trade_log() to report the ACTUAL fill time (bar
-        # close), not just the bar-open label bars.index carries.
+        # modal spacing between bars, e.g. Timedelta("3min") for 3-min bars.
+        # trade_log() adds it to the bar-open label to get the fill time.
         diffs = pd.Series(np.diff(bars.index.values))
         bar_dur = diffs.mode().iloc[0] if len(diffs) else pd.Timedelta(0)
         kw = dict(entry_time=pd.DatetimeIndex(entry_times),
@@ -255,32 +220,26 @@ def measured_winrate(entries: Entries, rr: float) -> float:
 
 
 def trade_log(entries: Entries, rr: float | None = None) -> pd.DataFrame:
-    """Human-readable, one-row-per-trade table for MANUAL verification: real
-    timestamp + direction + entry/stop price for every entry the strategy
-    actually took (post one_position gating) -- line these up against your
-    own fills to confirm the strategy is taking the setups you'd take.
+    """One row per trade taken (after one_position gating), with timestamp,
+    direction and entry/stop price, for checking against real fills.
 
-    IMPORTANT re: timestamps -- `bar_open` is the bar's START (pandas resample
-    labels bins by their left edge), but `entry`/`stop` are that SAME bar's
-    CLOSE price (kernel_bos, like most of these strategies, enters at the
-    bar's close). That price isn't actually known/fillable until the bar
-    FINISHES, i.e. at `fill_time` (= bar_open + one bar's duration), not at
-    bar_open itself. `exit_bar_open` has the same bar-start convention (the
-    true exit tick can land anywhere within that bar, not necessarily its
-    close).
+    Timestamps: the index `time` is the bar's start (pandas labels resample
+    bins by their left edge), but `entry`/`stop` are that bar's close, which
+    is only fillable at `fill_time` = time + one bar. `exit_bar_open` uses the
+    same bar-start convention; the real exit can land anywhere in that bar.
 
-    Requires entries came from backtest_entries(..., detail=True). Pass `rr`
-    to also show the target price and win/loss/scratch outcome at that R:R
-    (purely informational -- doesn't change which entries are listed)."""
+    Needs entries from backtest_entries(..., detail=True). Pass `rr` to add
+    the target price and the win/loss/scratch outcome at that R:R; it doesn't
+    change which entries are listed."""
     if entries.entry_time is None:
         raise ValueError("trade_log() needs entries built with "
-                         "backtest_entries(..., detail=True) -- timestamps/prices "
+                         "backtest_entries(..., detail=True); timestamps/prices "
                          "were not recorded on this Entries object.")
     stop_pts = np.abs(entries.entry_price - entries.stop_price)
     bar_dur = entries.bar_duration if entries.bar_duration is not None else pd.Timedelta(0)
     df = pd.DataFrame({
-        "time": entries.entry_time,                       # bar OPEN -- kept as the index for .loc[] date slicing
-        "fill_time": entries.entry_time + bar_dur,         # bar CLOSE -- when `entry` below actually happened
+        "time": entries.entry_time,                       # bar open; the index, for .loc[] date slicing
+        "fill_time": entries.entry_time + bar_dur,         # bar close, when `entry` filled
         "exit_bar_open": entries.exit_time,
         "direction": np.where(entries.direction == 1, "LONG", "SHORT"),
         "entry": entries.entry_price,
@@ -293,33 +252,25 @@ def trade_log(entries: Entries, rr: float | None = None) -> pd.DataFrame:
     if rr is not None:
         R, _ = ledger_for_rr(entries, rr)
         df["target"] = entries.entry_price + entries.direction * rr * stop_pts
-        df["graded_R"] = R   # the R actually credited at this rr -- same number ledger_for_rr()
-                              # feeds the risk-geometry/Monte Carlo pipeline. NOT mfe_R/timeout_R
-                              # above, which are diagnostic-only (see their column comments).
+        df["graded_R"] = R   # the R credited at this rr, as fed to the Monte Carlo;
+                              # mfe_R/timeout_R above are diagnostic only
         df["outcome_at_rr"] = np.where(R >= rr - 1e-9, "WIN",
                                 np.where(R <= -1 + 1e-9, "LOSS", "SCRATCH"))
     return df.set_index("time")
 
 
 def signal_log(strategy, bars) -> pd.DataFrame:
-    """Every RAW signal strategy.entries() flags -- no stop, no max_hold,
-    no one_position gating, no backtest_entries() involved at all. This is
-    what a TradingView indicator plots: one marker per qualifying bar,
-    independent of any backtest risk-management choice.
+    """Every raw signal strategy.entries() flags, with no stop, max_hold or
+    one_position gating. This matches what a TradingView indicator plots:
+    one marker per qualifying bar.
 
-    Use THIS to verify signal-generation logic against a reference chart.
-    Use trade_log() (needs backtest_entries(..., detail=True)) for the
-    R-multiple-based risk-geometry pipeline, which legitimately needs a stop
-    concept -- but that stop can silently swallow real signals via
-    one_position's busy-until gating (a wide stop keeps a "trade" open for a
-    long time, so any later signal that fires before it resolves never makes
-    it into trade_log()). signal_log() has none of that: if strategy.entries()
-    flagged it, it's in this table, full stop.
+    Use it to check signal logic against a reference chart. trade_log() can
+    miss signals, because one_position skips any signal that fires while an
+    earlier trade is still open, and a wide stop keeps trades open longer.
 
-    time is the bar's OPEN (pandas resample's left-edge convention, same as
-    trade_log()) -- the bar isn't fillable until fill_time = time + one bar's
-    duration. `price` is that bar's CLOSE, or the strategy's own fill price
-    if entries() returned one (3-tuple return)."""
+    `time` is the bar's open (same convention as trade_log()); the bar is
+    fillable at fill_time = time + one bar. `price` is that bar's close, or
+    the strategy's own fill price if entries() returned a 3-tuple."""
     wants_bars = getattr(strategy, "wants_bars", False)
     res = strategy.entries(bars) if wants_bars else strategy.entries(
         bars["high"].to_numpy(float), bars["low"].to_numpy(float), bars["close"].to_numpy(float))
@@ -352,7 +303,6 @@ def load_strategy(name_or_path: str):
         spec = importlib.util.spec_from_file_location("user_strategy", path)
         mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     else:
-        import importlib
         mod = importlib.import_module(f"strategies.{name_or_path}")
     return mod.get_strategy()
 

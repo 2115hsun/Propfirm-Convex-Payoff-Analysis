@@ -1,21 +1,19 @@
 """
-Surface3D.py -- interactive 3-D risk-geometry visualisation (Plotly).
+Surface3d.py: interactive 3-D risk-geometry charts (Plotly).
 
-Consumes the dict returned by Analysis_points.risk_geometry_3d(...):
+Takes the dict returned by Analysis.risk_geometry_3d(...):
     g["pass_grid"]  : ndarray[n_stop, n_risk, n_rr]  pass rate %
     g["days_grid"]  : ndarray[n_stop, n_risk, n_rr]  mean days-to-pass (may hold nan)
     g["wr_grid"]    : ndarray[n_stop, n_rr]          measured WR (risk-independent)
     g["stop_grid"], g["risk_pcts"], g["rr_grid"]     the three axes
     g["best"]       : dict(stop_points, risk_pct, rr, pass_pct, ...)
 
-Two views, both with hover that reads off the exact (stop, risk%, R:R) and the
-pass rate / days-to-pass / WR at that point:
+Both views show (stop, risk%, R:R), pass rate, days to pass and WR on hover:
 
-  surface_by_stop(g)  -> one pass-rate SURFACE over (risk% x R:R), with a SLIDER
-                         across stop-points. This is the "3-D surface you hover"
-                         you asked for; the slider is the 4th axis (stop).
-  scatter_4d(g)       -> every grid cell as a point at (stop, risk%, R:R), colour
-                         = pass rate. The whole cube at once; best cell ringed.
+  surface_by_stop(g)  -> pass-rate surface over (risk% x R:R), with a slider
+                         over stop points as the fourth axis.
+  scatter_4d(g)       -> every grid cell as a point at (stop, risk%, R:R),
+                         colour = pass rate, best cell ringed.
 
 write_html(fig, path) saves a standalone file that opens in any browser and
 renders inside Jupyter via fig.show().
@@ -29,7 +27,7 @@ except ImportError as e:                       # keep the import error actionabl
     raise ImportError("Surface3D needs plotly: pip install plotly") from e
 
 
-_COLORSCALE = [                                 # red -> amber -> green, matches your heatmaps
+_COLORSCALE = [                                 # red -> amber -> green, same as the matplotlib heatmaps
     [0.00, "#8a1f1f"], [0.25, "#c0392b"], [0.45, "#e67e22"],
     [0.62, "#c9b02a"], [0.80, "#4a9a3a"], [1.00, "#1e7a2e"]]
 
@@ -71,7 +69,7 @@ def surface_by_stop(g, firm_name="", start_balance=50_000.0, max_days_to_pass=No
 
     fig = go.Figure(data=frames[0].data, frames=frames)
     b = g.get("best", {})
-    title = f"3-D risk geometry — {firm_name}".strip(" —")
+    title = f"3-D risk geometry: {firm_name}".strip(" :")
     if b:
         title += (f"<br><sup>best: {b.get('stop_points'):g}pt / {b.get('rr'):g}R "
                   f"@ {b.get('risk_pct'):.2f}% = {b.get('pass_pct'):.0f}% pass</sup>")
@@ -113,7 +111,7 @@ def scatter_4d(g, firm_name="", start_balance=50_000.0, max_days_to_pass=None):
             marker=dict(size=9, color="rgba(0,0,0,0)", line=dict(color="cyan", width=4)),
             name="best", hovertemplate=f"BEST {b['pass_pct']:.0f}% pass<extra></extra>"))
     fig.update_layout(
-        title=f"3-D risk geometry (all cells) — {firm_name}".strip(" —"),
+        title=f"3-D risk geometry (all cells): {firm_name}".strip(" :"),
         scene=dict(xaxis_title="stop (points)", yaxis_title="risk per trade (%)", zaxis_title="R:R"),
         margin=dict(l=0, r=0, t=50, b=0), height=680)
     return fig

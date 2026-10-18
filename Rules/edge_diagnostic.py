@@ -1,7 +1,7 @@
-"""edge_diagnostic.py — points-based edge bracket vs random + lookahead controls."""
+"""edge_diagnostic.py: points-based strategy edge vs random and lookahead controls."""
 from __future__ import annotations
 import numpy as np
-from Backtest import backtest_entries, ledger_for_rr, measured_winrate   # points version now
+from Backtest import backtest_entries, ledger_for_rr, measured_winrate
 
 
 class RandomEntry:
@@ -31,8 +31,8 @@ def _edge(E, rr):
 
 def bracket_edge(strategy, bars, stop_points=40.0, max_hold=40, rr=1.5,
                  cheat_H=20, seed=0, n_boot=400):
-    """Strategy edge vs random/lookahead controls at ONE stop, with a bootstrap
-    CI on the strategy edge (distinguishable from zero?)."""
+    """Strategy edge vs random and lookahead controls at one stop, with a
+    bootstrap CI on the strategy edge to see whether it differs from zero."""
     Es = backtest_entries(strategy, bars, stop_points=stop_points, max_hold=max_hold)
     ns = len(Es.day_ids)
     es = _edge(Es, rr)
@@ -54,7 +54,7 @@ def bracket_edge(strategy, bars, stop_points=40.0, max_hold=40, rr=1.5,
 
 
 def bracket_edge_grid(strategy, bars, stop_grid, rr=1.5, max_hold=40, seed=0):
-    """Run bracket_edge across a stop grid — the pre-sweep 'is there any stop
-    where this beats random' check."""
+    """Run bracket_edge over a stop grid: a pre-sweep check for any stop
+    where the strategy beats random."""
     return [bracket_edge(strategy, bars, stop_points=sp, rr=rr, max_hold=max_hold, seed=seed)
             for sp in stop_grid]

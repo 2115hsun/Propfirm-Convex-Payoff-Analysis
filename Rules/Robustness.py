@@ -1,9 +1,10 @@
 """
-robustness.py — regime-robust risk-geometry selection.
+Robustness.py: regime-robust risk-geometry selection.
 
-Runs the risk x R:R grid over rolling windows, collapses each cell across windows
-to a distribution (mean/min/p25/std), and picks the geometry with the highest
-FLOOR (worst-case), not the highest mean. Then validates the choice out-of-sample.
+Runs the risk x R:R grid over rolling windows, summarises each cell across
+windows (mean/min/p25/std), and picks the geometry with the highest floor
+(p25 by default) rather than the highest mean. Then checks the pick
+out-of-sample.
 """
 from __future__ import annotations
 import numpy as np
@@ -157,15 +158,15 @@ def summary_table(is_grids, oos_grids, risk_pcts, rr_grid, start_balance=50000,
                 f"OOS_%win>={threshold}": oos_con[i, j],
             })
     df = pd.DataFrame(rows)
-    # robustness score = the WORSE of the two consistencies (reward reliable in BOTH)
+    # robustness score = the worse of the two consistencies, so a cell must hold up in both
     df["robust_score"] = df[[f"IS_%win>={threshold}", f"OOS_%win>={threshold}"]].min(axis=1)
     return df.sort_values("robust_score", ascending=False).reset_index(drop=True)
 
 
 def recommend_range(is_grids, oos_grids, risk_pcts, rr_grid, start_balance=50000,
                     threshold=60, bar=60):
-    """The region of cells reliable in BOTH IS and OOS (>= bar% of windows clear
-    the threshold). Returns the RR / risk / $ ranges spanning that region."""
+    """The cells reliable in both IS and OOS (>= bar% of windows clear the
+    threshold), as RR / risk / $ ranges."""
     both = np.minimum(consistency(is_grids, threshold), consistency(oos_grids, threshold))
     while bar > 20 and not (both >= bar).any():
         bar -= 5
@@ -210,7 +211,7 @@ def plot_summary(is_grids, oos_grids, risk_pcts, rr_grid, start_balance=50000,
            f"{rec['rr_lo']:g}-{rec['rr_hi']:g}R @ {rec['risk_lo']:.2f}-{rec['risk_hi']:.2f}% "
            f"(${rec['dollar_lo']:,.0f}-${rec['dollar_hi']:,.0f}/trade)") if rec else \
           "No range reliable in both IS and OOS at this bar."
-    fig.suptitle("Regime-Robust Geometry — consistency across rolling 2-month windows\n" + sub,
+    fig.suptitle("Regime-robust geometry: consistency across rolling 2-month windows\n" + sub,
                  fontweight="bold", fontsize=11)
     if savepath:
         fig.savefig(savepath, dpi=130, bbox_inches="tight")

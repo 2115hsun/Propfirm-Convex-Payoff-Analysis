@@ -1,20 +1,19 @@
 """
-strategies/random_baseline.py — TRUE zero-edge control (FAST version).
+strategies/random_baseline.py: zero-edge control.
 
-RandomEntryBaseline: places entries at RANDOM bars within the session window,
-with RANDOM direction. This is the pure "beat variance / barrier geometry" floor:
-no timing edge, no direction edge.
+RandomEntryBaseline places entries at random bars inside the session window,
+with random direction: no timing edge and no direction edge. It shows what
+the barrier geometry alone produces.
 
-FAST: the eligible pool is defined DIRECTLY from the session window
-(sess_start..sess_end on every trading day), so it does NOT re-run the (expensive)
-inner strategy on every seed. Pass either:
-  * n_entries  = fixed number of random entries per run (matches your real count), OR
-  * per_day    = average entries/day (count = per_day * n_trading_days), OR
-  * inner      = a strategy whose entry COUNT is matched (run ONCE, cached by caller).
+The eligible bars come straight from the session window (sess_start..sess_end
+each day), so the inner strategy doesn't have to be re-run for every seed.
+Set the entry count with one of:
+  * n_entries  = fixed number of random entries per run (e.g. the real count)
+  * per_day    = average entries/day (count = per_day * n_trading_days)
+  * inner      = a strategy whose entry count is matched (slow: runs it once)
 
-Direction is random, so MFE/MAE are recomputed per trade by backtest_entries()'s
-barrier logic (this wrapper only supplies idx+direction) -> fully consistent with
-the real ledger's mechanics.
+This wrapper only supplies idx and direction; backtest_entries() computes
+MFE/MAE the same way as for the real strategy.
 
 Usage (fast):
     z = RandomEntryBaseline(bars_session=("09:30","11:00"), n_entries=n_real, seed=s)

@@ -1,12 +1,12 @@
 """
-strategies/dual_kernel.py — dual-kernel CROSSOVER entry (matches the Pine
-'Dual-Kernel Crossover + displacement' indicator exactly).
+strategies/dual_kernel.py: dual-kernel crossover entry, matching the Pine
+'Dual-Kernel Crossover + displacement' indicator.
 
-TRIGGER: fast kernel crosses the slow kernel (ta.crossover). No cross -> no entry.
-GATES (all optional, applied on top of the cross):
+Trigger: fast kernel crosses the slow kernel (ta.crossover). No cross, no entry.
+Gates (all optional, applied on top of the cross):
   - slope confirmation: slopeF >= slope_min_f (dir), slopeS >= slope_min_s.
-      NOTE: the slow slope is often AGAINST the cross AT the cross bar, so keep
-      slope_min_s low/0 or it kills entries.
+      The slow slope often points against the cross on the cross bar, so keep
+      slope_min_s low or 0, or it removes most entries.
   - displacement (Rule 1, default ON): the cross candle's body must clear the
       prior candle's wick in the trade direction, and body >= min_body_pts.
       long : body_top > prior_high ; short: body_bot < prior_low.
@@ -16,7 +16,7 @@ GATES (all optional, applied on top of the cross):
                     cross (delays the entry that many bars).
   - session gate (sess_start/sess_end), cooldown (min_gap_bars).
 
-Kernels computed continuously on the FULL bar series (no reset).
+Kernels are computed continuously on the full bar series (no reset).
 Interface: wants_bars=True; entries(bars)->(idx,dir); name; get_strategy(**over).
 """
 from __future__ import annotations

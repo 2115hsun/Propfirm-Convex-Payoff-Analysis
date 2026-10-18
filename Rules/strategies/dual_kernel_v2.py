@@ -1,13 +1,13 @@
 """
-strategies/dual_kernel_v2.py — dual-kernel crossover with:
-  - displacement scan window (cross bar / +1 / +2 after cross), entry bar MUST displace
+strategies/dual_kernel_v2.py: dual-kernel crossover with:
+  - displacement scan window (cross bar / +1 / +2 after cross); the entry bar must displace
   - body-size + optional close-beyond-prior-wick displacement definition
-  - extension filter (skip if the extBars candles BEFORE the entry already ran extPts)
+  - extension filter (skip if the ext_bars candles before the entry already ran ext_pts)
   - ER chop gate (toggle)
   - cross-quality "open speed" (kernels pulling apart fast at the cross)
   - slope confirmation (optional), session, cooldown, one entry per cross (latch)
 
-Matches the Pine 'Dual-Kernel Cross + disp-scan + ext/ER/wick' exactly.
+Matches the Pine 'Dual-Kernel Cross + disp-scan + ext/ER/wick' indicator.
 Kernels computed continuously (no reset). Interface: entries(bars)->(idx,dir).
 """
 from __future__ import annotations
@@ -69,7 +69,7 @@ def _compute(bars, hF, x0F, rF, hS, x0S, rS, atr_len,
         cs = 0 if bearCross[i] else cs + 1
         bBull[i] = cb; bBear[i] = cs
 
-    # displacement of the CURRENT bar (entry bar must displace)
+    # displacement of the current bar (the entry bar must displace)
     body = np.abs(c - o); bull = c > o; bear = c < o
     prev_hi = np.concatenate([[np.inf], hi[:-1]]); prev_lo = np.concatenate([[-np.inf], lo[:-1]])
     wickL = np.ones(n, bool) if not use_wick else (c > prev_hi)
@@ -81,11 +81,10 @@ def _compute(bars, hF, x0F, rF, hS, x0S, rS, atr_len,
     eligL = ((scan_at & (bBull == 0)) | (scan_p1 & (bBull == 1)) | (scan_p2 & (bBull == 2)))
     eligS = ((scan_at & (bBear == 0)) | (scan_p1 & (bBear == 1)) | (scan_p2 & (bBear == 2)))
 
-    # extension: ext_bars candles BEFORE the current bar, same dir, net move >= ext_pts
+    # extension: ext_bars candles before the current bar, same dir, net move >= ext_pts
     if use_ext:
         allBull = np.ones(n, bool); allBear = np.ones(n, bool)
         for k in range(1, ext_bars + 1):
-            cb_ = np.concatenate([np.full(k, False), (c[:-k] > o[:-k])]) if k < n else np.zeros(n, bool)
             # shift so index i looks at bar i-k
             shifted_bull = np.full(n, False); shifted_bear = np.full(n, False)
             shifted_bull[k:] = (c[:-k] > o[:-k]); shifted_bear[k:] = (c[:-k] < o[:-k])
