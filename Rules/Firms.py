@@ -152,7 +152,7 @@ FIRMS: dict[str, FirmConfig] = {
         daily_loss_limit=None,               # Flex: no DLL
         dll_behavior=DLLBehavior.NONE,
         consistency_pct=0.50,                # Flex eval: 50% consistency rule
-        min_days=5,                          # Flex: min 5 trading days
+        min_days=1,                          # Flex: min 1 trading day
     ),
 }
 
