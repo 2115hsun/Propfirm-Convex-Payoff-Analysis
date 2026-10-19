@@ -184,4 +184,4 @@ All figures use the Lucid 25K Flex rules at \$250 per trade, closing prices, and
 
 **Structure.** Each account takes one trade per day, and accounts are treated as independent. Risk per trade is fixed within a solve, the objective is the probability of a payout rather than value per unit of time, payouts are always taken at the same level, and an account that reaches its payout limit is treated as finished.
 
-**Economics.** The evaluation pass rate and duration were measured on the Lucid 25K and reused for other plans. Lifecycle figures are steady-state averages that ignore the timing of fees and payouts.
+**Economics.** The evaluation pass rate (34%) and duration (about 3.4 trading days to pass, 2 to fail) come from a five-account replay of the same trades under the Lucid 25K Flex evaluation rules at 2% risk and RR 1.5, and are reused for the other plans. Lifecycle figures are steady-state averages that ignore the timing of fees and payouts.
