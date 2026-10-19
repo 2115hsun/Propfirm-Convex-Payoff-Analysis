@@ -1,4 +1,4 @@
-Settings: Lucid 25K Flex, $250 per trade, MAE off, 884 trades.
+Settings: Lucid 25K Flex, $250 per trade, MAE on, 884 trades.
 
 | Check | Solver | Exact |
 |---|---|---|
@@ -7,5 +7,5 @@ Settings: Lucid 25K Flex, $250 per trade, MAE off, 884 trades.
 
 | Built on | Scored on | Optimal policy | Always RR 1.0 | Always RR 5.0 |
 |---|---|---|---|---|
-| First half | Second half | 0.351 | 0.298 | 0.291 |
-| Second half | First half | 0.390 | 0.301 | 0.335 |
+| First half | Second half | 0.316 | 0.282 | 0.280 |
+| Second half | First half | 0.360 | 0.288 | 0.323 |
