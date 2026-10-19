@@ -203,3 +203,71 @@ All figures use the Lucid 25K Flex rules at \$250 per trade, closing prices, and
 **Structure.** Each account takes one trade per day, and accounts are treated as independent. Risk per trade is fixed within a solve, the objective is the probability of a payout rather than value per unit of time, payouts are always taken at the same level, and an account that reaches its payout limit is treated as finished.
 
 **Economics.** The evaluation pass rate (34%) and duration (about 3.4 trading days to pass, 2 to fail) come from a five-account replay of the same trades under the Lucid 25K Flex evaluation rules at 2% risk and RR 1.5, and are reused for the other plans. Lifecycle figures are steady-state averages that ignore the timing of fees and payouts.
+
+
+## Requirements
+
+Python 3.10 or later (the code uses `X | None` type hints). Install the packages with
+
+```bash
+pip install -r requirements.txt
+```
+
+where `requirements.txt` is
+
+```
+numpy>=2.2
+pandas>=2.3
+matplotlib>=3.10
+pyarrow>=23.0      # reading the NQ parquet file (Rules/ only)
+plotly>=5.0        # optional: interactive 3-D charts in Rules/Surface3d.py
+```
+
+The tested versions are Python 3.10.19, numpy 2.2.6, pandas 2.3.3, matplotlib 3.10.8 and pyarrow 23.0.0.
+
+### Reproducing the results
+
+The funded-account results need no market data. The trade ledgers they are built from are committed in `Funded/data/`. From the `Funded` folder:
+
+```bash
+USE_MAE=1 python Make_figures.py     # README figures and figures/validation_table.md
+USE_MAE=1 python run_prelock.py      # pre-lock solve, policy tables, out-of-sample test
+USE_MAE=1 python Export_results.py   # JSON for the dashboard
+python clustering_test.py            # trade- and day-level clustering test
+```
+
+`PLAN` selects the firm plan (default `lucid25flex`; see `Funded/Config.py`), and `USE_MAE=1` counts a dip to the floor during a trade as a breach, as in every result above. In PowerShell, set them first with `$env:USE_MAE = "1"`.
+
+Rebuilding the ledgers from raw prices (`Rules/Export_ledger.py`) needs the 1-minute NQ data, which comes from Databento under a license that does not allow redistribution, so `Rules/data/` is not included.
+
+## Repository layout
+
+```
+Funded/                    Funded-account MDP (the main model)
+  Config.py                firm plan rules for the funded stage
+  Postlock.py, Prelock.py  the two stages, solved by value iteration
+  Sweep.py, Lifecycle.py   risk-per-trade sweep and cycle economics
+  run_postlock.py, run_prelock.py   checks, tables and the out-of-sample test
+  Make_figures.py          README figures and validation table
+  Export_results.py        JSON export for the dashboard
+  clustering_test.py       independence test for trade outcomes
+  Toy_MDP_Engine.py, Solvers.py     the five-state toy MDP
+  data/                    trade ledgers, MAE, day ids and entry times (884 trades)
+  Dashboard Json export/   exported results per plan
+Rules/                     Backtest and evaluation stage
+  Backtest.py              entries + fixed-point stop -> R-multiple ledger
+  Strategy.py, Engine.py   resampling and vectorized Monte Carlo of evaluations
+  Firms.py                 evaluation rules per firm
+  MultiEval.py             multi-account replay of one signal stream
+  Analysis.py, Walkforward.py, Surface3d.py   risk-geometry search and validation
+  Export_ledger.py         builds Funded/data/ from the backtest
+  edge_diagnostic.py       strategy edge vs random and lookahead controls
+  strategies/              entry rules (dual_kernel_v2 is the one used)
+figures/                   README figures and validation table
+Master Analysis/           notebooks for the evaluation and funded analyses
+Markdown Rules/            firm rule summaries
+docs/                      Obsidian vault: method notes, decisions, experiments
+Funded Account Dashboard.html   interactive dashboard (load a file from Dashboard Json export/)
+```
+
+Folders named `superseded/` hold earlier versions kept for reference; nothing in the main pipeline imports them.
