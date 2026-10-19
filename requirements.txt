@@ -1,0 +1,5 @@
+numpy>=2.2
+pandas>=2.3
+matplotlib>=3.10
+pyarrow>=23.0      # reading the NQ parquet file (Rules/ only)
+plotly>=5.0        # optional: interactive 3-D charts in Rules/Surface3d.py
