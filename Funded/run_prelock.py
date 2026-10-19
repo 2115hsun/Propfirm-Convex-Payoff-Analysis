@@ -1,4 +1,4 @@
-"""run_prelock.py — solve, comparisons, and out-of-sample tests for the pre-lock model."""
+"""run_prelock.py: solve, comparisons, and out-of-sample tests for the pre-lock model."""
 import time
 import numpy as np
 import Sweep 

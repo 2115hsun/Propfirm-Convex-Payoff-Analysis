@@ -1,4 +1,4 @@
-"""run_postlock.py — checks and tables for the post-lock model in Postlock.py."""
+"""run_postlock.py: checks and tables for the post-lock model in Postlock.py."""
 import numpy as np
 from Config import PLAN
 from Postlock import (Coins, risk, RETURN_ARRAYS,              # data

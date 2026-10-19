@@ -58,7 +58,7 @@ def add_to_grid(x_prime, prob, dest, Floor, Target, Dx):
     elif x_prime >= Target:
         dest["target"] = dest.get("target", 0.0) + prob
     else:
-        # Case 3: INTERIOR — interpolate x_prime across two grid cells.
+        # interior: split x_prime between the two neighbouring grid cells
         lo = cell_index(x_prime, Floor, Dx)
         x_lo = Floor + (lo + 1) * Dx
         f = (x_prime - x_lo) / Dx

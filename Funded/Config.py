@@ -1,4 +1,4 @@
-"""Config.py — prop-firm plan rules. Dollar levels are measured from the start balance.
+"""Config.py: prop-firm plan rules. Dollar levels are measured from the start balance.
 Rules checked October 2026; confirm in each firm's dashboard before relying on them."""
 import os
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")

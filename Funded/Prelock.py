@@ -1,7 +1,7 @@
 """
-Prelock.py — pre-lock DP for the Lucid Pro 25K funded account.
+Prelock.py: pre-lock DP for the funded account of the selected plan (default Lucid 25K Flex).
 
-State (m, y) = (peak, drawdown), in dollars above the $25,000 start.
+State (m, y) = (peak, drawdown), in dollars above the starting balance.
 Breach when drawdown reaches DD_limit. Lock when the peak reaches Lock_peak;
 the account then hands off to the post-lock model (Postlock.py).
 """
@@ -15,7 +15,7 @@ VERBOSE     = False
 
 
 DD_limit  = PLAN.dd_limit       # trailing drawdown that breaches ($)
-Lock_peak = PLAN.lock_peak       # peak (above start) that locks the floor at $25,100
+Lock_peak = PLAN.lock_peak       # peak (above start) that freezes the floor
 Dx        = PLAN.dx         # grid step ($)
 
 m_grid = np.arange(0, Lock_peak, Dx)     # peaks:     0 ... 1050   (22 rows)
@@ -86,11 +86,11 @@ def transition_pre(j, k, coin, risk):
 # ====================================================================================
 
 def v_post(x, V_post, at_target=1.0):
-    """Post-lock value at equity x (dollars above the $25,000 start)."""
+    """Post-lock value at equity x (dollars above the starting balance)."""
     if x >= post.Target:
-        return at_target                                      # at or past $27,100: payout
+        return at_target                                      # at or past the payout level
     if x <= post.Floor:
-        return 0.0                                        # at or below $25,100: dead
+        return 0.0                                        # at or below the locked floor: breached
 
     lo   = post.cell_index(x, post.Floor, post.Dx)
     x_lo = post.Floor + (lo + 1) * post.Dx

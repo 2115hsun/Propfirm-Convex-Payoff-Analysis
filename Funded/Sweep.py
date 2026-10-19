@@ -1,4 +1,4 @@
-"""Sweep.py — run the full funded lifecycle at several risk levels and return one table."""
+"""Sweep.py: run the full funded lifecycle at several risk levels and return one table."""
 import pandas as pd
 import Postlock as post
 import Prelock as pre

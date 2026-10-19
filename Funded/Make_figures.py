@@ -1,6 +1,6 @@
-"""make_figures.py: figures and the validation table for the README.
+"""Make_figures.py: figures and the validation table for the README.
 
-Run from the Funded folder:  python make_figures.py
+Run from the Funded folder:  python Make_figures.py
 Output goes to figures/ in the repo root:
     account_path.png     one simulated account: balance, floor, lock and payout
     policy_map.png       best RR in each pre-lock state
