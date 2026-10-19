@@ -1,5 +1,7 @@
-"""export_results.py — write the risk sweep and the policy tables to funded_results_{results['meta']['plan_key']}_{tag}.jsonfor the dashboard.
-Run from the Funded folder:  python export_results.py
+"""Export_results.py: write the risk sweep and policy tables to
+funded_results_<plan>_<mae|nomae>.json for the dashboard.
+
+Run from the Funded folder:  python Export_results.py
 """
 import json
 import numpy as np

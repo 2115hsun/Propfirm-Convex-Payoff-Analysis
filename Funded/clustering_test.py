@@ -1,5 +1,7 @@
+import os
 import pickle
-import numpy as np 
+import numpy as np
+from Config import DATA_DIR
 
 N_SHUFFLES = 5000 # numbers of random reorderings  
 RRS = [1.0, 1.5, 2.0, 2.5, 3.0] # which RR to target 
@@ -7,9 +9,9 @@ rng = np.random.default_rng(0) # random number generator for reproducibility
 
 # Trade Level Clustering Test =======================================================================
 """This section is intended to answer the question "does this trade's result predict the next one's? It treats the 884 trades in 2026 as one long sequence,
-and test whether losses bunch up in that sequnece more than chance. The answer is mostly no, but there is a small effect as RR kept increasing."""
+and test whether losses bunch up in that sequence more than chance. The answer is mostly no, but there is a small effect as RR kept increasing."""
 
-with open("ledgers.pkl", "rb") as f:
+with open(os.path.join(DATA_DIR, "ledgers.pkl"), "rb") as f:
     R_ALL = pickle.load(f)
 
 R = np.asarray(R_ALL[1.0], float)
@@ -55,7 +57,7 @@ for rho in RRS:
         print(f"  {name:<24} real {real:8.3f}   shuffled median {np.median(sims):8.3f}   p = {p:.3f}")
 
 # Streak dates ===============================================================================
-with open ("entry_times.pkl", "rb") as f:
+with open(os.path.join(DATA_DIR, "entry_times.pkl"), "rb") as f:
     TIMES = pickle.load(f)
 
 R = np.asarray(R_ALL[1.0], float)
@@ -72,7 +74,7 @@ print("the streak: ", R[start:end + 1])
 print("just before/after:", R[start-1], R[end+1])
 
 # Day Level Clustering Test =======================================================================
-with open("day_ids.pkl", "rb") as f:
+with open(os.path.join(DATA_DIR, "day_ids.pkl"), "rb") as f:
     DAY = np.asanyarray(pickle.load(f))
 
 def daily_totals(R, day):

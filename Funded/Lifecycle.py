@@ -8,6 +8,10 @@ Activation_fee = PLAN.activation_fee
 Payout = PLAN.payout 
 Split = PLAN.split
 Max_payouts = PLAN.max_payouts 
+# Rough estimates from the 5-slot rotation in analysis_notebook_1 (updated 09.15.26),
+# "2) Full Scope Analysis": 2026 trades, 25pt stop, RR 1.5, 2% risk, MAE breach on.
+# Lucid 25K Flex, LucidPro 50K and Topstep 50K eval rules all give 85 passed / 162 blown
+# (34%), mean 3.4 days to pass and 2.0 to fail. Reused for every plan.
 Eval_pass_rate = 0.35
 Days_pass = 4
 Days_fail = 2
