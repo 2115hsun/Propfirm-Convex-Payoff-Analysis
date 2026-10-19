@@ -39,6 +39,12 @@ Within the funded stage, the account sits between two barriers. Below it is a fl
 
 Prop firms are usually discussed as a test of trading skill. This project treats the funded account as a first-passage problem with path-dependent barriers: the state is the balance and the peak, the action is the RR, and the objective is the probability of reaching a payout before the floor. That solution, combined with the evaluation's fee, pass rate and duration, prices the full cycle.
 
+<p align="center">
+  <img src="figures/account_path.png" width="640" alt="One simulated funded account: balance, trailing floor, lock and payout">
+  <br>
+  <sub><b>Figure 1.</b> One simulated Lucid 25K account at &#36;250 per trade, following the model's policy. The floor trails the peak until the lock, then stays fixed. The path was chosen to show each stage and is not a typical outcome.</sub>
+</p>
+
 ## Data
 
 The data are 1-minute open, high, low, close and volume bars for NQ (Nasdaq-100 E-mini futures) from Databento, covering June 2021 to June 2026. Databento provides one row per listed instrument per minute, including individual contract months and calendar spreads, with prices stored as fixed-point integers.
@@ -108,6 +114,8 @@ The two stages are solved in reverse order, because the value of reaching the lo
 
 <p align="center">
   <img src="figures/postlock_value.png" width="560" alt="Post-lock payout probability against balance at &#36;250 per trade">
+  <br>
+  <sub><b>Figure 2.</b> Probability of reaching the payout before the floor after the lock, by balance, at &#36;250 per trade.</sub>
 </p>
 
 ### 4) Pre-lock stage
@@ -117,6 +125,8 @@ Before the lock, the floor trails the peak, so the state needs two numbers: the 
 <p align="center">
   <img src="figures/policy_map.png" width="49%" alt="Best RR target in each pre-lock state at &#36;250 per trade">
   <img src="figures/value_map.png" width="49%" alt="Probability of a first payout from each pre-lock state at &#36;250 per trade">
+  <br>
+  <sub><b>Figure 3.</b> Pre-lock states at &#36;250 per trade. Left: the best RR target in each state; grey states are near-ties, where the top two targets differ by less than 0.1 percentage points. Right: the probability of a first payout from each state.</sub>
 </p>
 
 ### 5) From model to results
@@ -154,6 +164,12 @@ The optimal policy changes RR with the account's state. To check that this is no
 
 Choosing RR by state raises the first-payout probability by about 3.5 percentage points over the best fixed rule in both directions (3.2 and 3.6), so the gain does not depend on one split. A larger sample is needed to confirm it.
 
+<p align="center">
+  <img src="figures/oos_result.png" width="640" alt="Out-of-sample first-payout probability for the state-based policy and two fixed rules">
+  <br>
+  <sub><b>Figure 4.</b> Out-of-sample probability of a first payout. The policy is built on one half of the trades and scored on the other, against always using RR 1.0 or RR 5.0.</sub>
+</p>
+
 ## Results
 
 All figures use the Lucid 25K Flex rules at \$250 per trade, closing prices, and count a dip to the floor during a trade as a breach, unless stated.
@@ -170,6 +186,8 @@ All figures use the Lucid 25K Flex rules at \$250 per trade, closing prices, and
 
 <p align="center">
   <img src="figures/risk_sweep.png" width="760" alt="First-payout probability and expected trades by risk per trade">
+  <br>
+  <sub><b>Figure 5.</b> Left: probability of a first payout by risk per trade. Right: expected trades until the first payout or a breach, on a log scale. Shaded results are provisional.</sub>
 </p>
 
 **Independence of outcomes.** Against 5,000 random reorderings, the trade sequence shows no excess clustering of losses at the trade or day level. The largest single event, 13 consecutive losing trades on April 23 and 24, 2026, did not recur. This supports treating trades and days as independent draws, within the limits of a 161-day sample.
