@@ -24,7 +24,7 @@ The rules that shape the problem, with the Lucid 25K Flex values:
 |---|---|---|
 | Trailing drawdown | The account closes if the balance falls a fixed amount below its highest end-of-day balance. The floor rises with the peak and never falls. | \$1,000 |
 | Lock | Once the peak is high enough, the floor stops trailing and freezes. | Locks at \$25,100 once the peak reaches \$26,100 |
-| Intraday breach | Some firms close the account if the balance touches the floor during a trade, even if it recovers by the close. | To verify |
+| Intraday breach | Some firms close the account if the balance touches the floor during a trade, even if it recovers by the close. | Assume yes (modeled as breach) |
 | Payout size | A share of profit, capped per withdrawal. | 50% of profit, up to \$1,000 |
 | Profitable days | A minimum number of days above a profit threshold in each payout cycle. | 5 days of at least \$100 |
 | Payout limit | A fixed number of payouts before the account moves to a live brokerage account. | 5 |
@@ -47,7 +47,7 @@ Prop firms are usually discussed as a test of trading skill. This project treats
 
 ## Data
 
-The data are 1-minute open, high, low, close and volume bars for NQ (Nasdaq-100 E-mini futures) from Databento, covering June 2021 to June 2026. Databento provides one row per listed instrument per minute, including individual contract months and calendar spreads, with prices stored as fixed-point integers.
+The data are 1-minute open, high, low, close and volume bars for NQ (Nasdaq-100 E-mini futures) from Databento, covering June 2021 to September 2026. Databento provides one row per listed instrument per minute, including individual contract months and calendar spreads, with prices stored as fixed-point integers.
 
 The raw file was converted to a continuous series in three steps. Prices were rescaled to index points and timestamps parsed in UTC. At each minute, only the instrument with the highest traded volume was kept, so the series follows the most liquid contract and rolls to the next contract month when its volume overtakes the expiring one. Rows with a close outside 1,000 to 40,000 points, an open below 1,000, or a non-positive low were removed, which excludes spreads and erroneous prints. This reduced 2,595,575 rows to 1,767,373, with no duplicate timestamps. Timestamps are converted to New York time for analysis. The series is not back-adjusted, so prices step at each roll by the difference between contract months.
 
@@ -57,7 +57,7 @@ The trade outcomes come from `dual_kernel_v2`, an intraday rule inspired by tren
 
 The rule estimates the short-term trend with two Nadaraya-Watson kernel regressions, which are weighted averages of recent closing prices. The fast one weights the last few bars most heavily; the slow one weights a longer window more evenly. When the fast estimate crosses above the slow one, recent prices are rising faster than the longer trend, and the rule looks for a long entry; a cross in the other direction looks for a short.
 
-Each trade has a fixed 25-point stop, which defines one unit of risk (1R). It exits at the stop, at the chosen target, or after 60 minutes, whichever comes first. Because the entries and stop are fixed, the same 884 trades (January to June 2026) can be scored at every target from 1R to 5R:
+Each trade has a fixed 25-point stop, which defines one unit of risk (1R). It exits at the stop, at the chosen target, or after 60 minutes, whichever comes first. Because the entries and stop are fixed, the same 884 trades (January to September 2026) can be scored at every target from 1R to 5R:
 
 | RR | 1.0 | 1.25 | 1.5 | 2.0 | 2.5 | 3.0 | 3.5 | 4.0 | 4.5 | 5.0 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -194,7 +194,7 @@ All figures use the Lucid 25K Flex rules at \$250 per trade, closing prices, and
 
 ## Limitations
 
-**Data.** The trade outcomes cover January to June 2026: 884 trades over 161 trading days, from a strategy selected after a search. The estimates are subject to selection bias, reflect one market regime, and carry no uncertainty ranges. Extending the sample to mid-2024 through 2026 with the strategy's parameters held fixed would allow a genuine out-of-sample test of the strategy itself.
+**Data.** The trade outcomes cover January to September 2026: 884 trades over 161 trading days, from a strategy selected after a search. The estimates are subject to selection bias, reflect one market regime, and carry no uncertainty ranges. Extending the sample to mid-2024 through 2026 with the strategy's parameters held fixed would allow a genuine out-of-sample test of the strategy itself.
 
 **Rules not yet modeled.** Every plan encoded here requires a minimum number of profitable days per payout cycle, which penalizes fast, high-risk cycles most, so the best position size is likely lower than the current sweep suggests. Position limits, daily loss limits and post-payout floor changes are also absent.
 
